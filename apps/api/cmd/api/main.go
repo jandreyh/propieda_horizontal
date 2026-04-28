@@ -29,8 +29,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saas-ph/api/internal/handlers"
+	authzpersistence "github.com/saas-ph/api/internal/modules/authorization/infrastructure/persistence"
+	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
+	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
+	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
+	tcpersistence "github.com/saas-ph/api/internal/modules/tenant_config/infrastructure/persistence"
+	tchttp "github.com/saas-ph/api/internal/modules/tenant_config/interfaces/http"
 	"github.com/saas-ph/api/internal/platform/config"
 	"github.com/saas-ph/api/internal/platform/db"
+	"github.com/saas-ph/api/internal/platform/jwtsign"
 	"github.com/saas-ph/api/internal/platform/middleware"
 	"github.com/saas-ph/api/internal/version"
 )
@@ -89,7 +96,15 @@ func run() error {
 		defer registry.Close()
 	}
 
-	router := buildRouter(logger, cfg, centralPool, registry)
+	signer, err := jwtsign.NewSigner(jwtsign.SignerConfig{
+		Issuer:   "ph-saas",
+		Audience: "ph-tenant",
+	})
+	if err != nil {
+		return err
+	}
+
+	router := buildRouter(logger, cfg, centralPool, registry, signer)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTP.Addr,
@@ -127,7 +142,7 @@ func run() error {
 	return nil
 }
 
-func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Pool, registry *db.Registry) http.Handler {
+func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Pool, registry *db.Registry, signer *jwtsign.Signer) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -157,6 +172,32 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				},
 			}))
 			tr.Get("/tenant/ready", handlers.TenantReady)
+
+			// Modulo identity.
+			idhttp.Mount(tr, idhttp.Dependencies{
+				Logger:      logger,
+				Signer:      signer,
+				UserRepo:    idpersistence.NewUserRepository(),
+				SessionRepo: idpersistence.NewSessionRepository(),
+				Now:         time.Now,
+			})
+
+			// Modulo authorization.
+			authzhttp.Mount(tr, authzhttp.Dependencies{
+				Logger:         logger,
+				RoleRepo:       authzpersistence.NewRoleRepo(),
+				PermissionRepo: authzpersistence.NewPermissionRepo(),
+				AssignmentRepo: authzpersistence.NewAssignmentRepo(),
+				Now:            time.Now,
+			})
+
+			// Modulo tenant_config.
+			tchttp.Mount(tr, tchttp.Dependencies{
+				Logger:       logger,
+				SettingsRepo: tcpersistence.NewSettingsRepository(),
+				BrandingRepo: tcpersistence.NewBrandingRepository(),
+				Now:          time.Now,
+			})
 		})
 	}
 

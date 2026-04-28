@@ -1,0 +1,294 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Tenant Config API
+  description: |
+    Modulo `tenant_config`. Expone configuracion clave-valor (settings) e
+    identidad visual (branding) del tenant. Multi-tenant por subdominio /
+    header `X-Tenant-Slug`; el tenant es implicito en la base.
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: settings
+    description: Configuracion clave-valor del conjunto.
+  - name: branding
+    description: Identidad visual del conjunto (singleton).
+
+paths:
+  /settings:
+    get:
+      tags: [settings]
+      summary: Lista settings (paginado)
+      description: Requiere permiso `settings.read`.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: category
+          schema: { type: string }
+          required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSettingsResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /settings/{key}:
+    parameters:
+      - $ref: '#/components/parameters/SettingKey'
+    get:
+      tags: [settings]
+      summary: Obtiene una setting por key
+      description: Requiere permiso `settings.read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Setting' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [settings]
+      summary: Crea o actualiza una setting (upsert)
+      description: |
+        Requiere permiso `settings.write`. La key se valida con
+        `^[a-z][a-z0-9_.]*$`. El valor es JSON arbitrario (se almacena
+        como JSONB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertSettingRequest' }
+      responses:
+        '200':
+          description: Setting persisted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Setting' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [settings]
+      summary: Soft-delete (archiva) una setting
+      description: Requiere permiso `settings.write`. Marca status=archived.
+      responses:
+        '204': { description: Archived }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /branding:
+    get:
+      tags: [branding]
+      summary: Obtiene el branding singleton del tenant
+      description: Requiere permiso `branding.read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Branding' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [branding]
+      summary: Actualiza el branding (concurrencia optimista)
+      description: |
+        Requiere permiso `branding.write`. El cliente debe enviar el
+        `expected_version` (leido del GET previo). Si no coincide, el
+        servidor responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBrandingRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Branding' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      in: query
+      name: offset
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+    SettingKey:
+      in: path
+      name: key
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9_.]*$'
+        maxLength: 128
+
+  schemas:
+    Setting:
+      type: object
+      required: [id, key, value, status, created_at, updated_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string, pattern: '^[a-z][a-z0-9_.]*$' }
+        value:
+          description: Valor JSON arbitrario (se persiste como JSONB).
+        description: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [active, archived]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer, format: int32 }
+    UpsertSettingRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: Valor JSON arbitrario.
+        description: { type: string }
+        category: { type: string }
+    ListSettingsResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Setting' }
+        total: { type: integer, format: int64 }
+        limit: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+
+    Branding:
+      type: object
+      required: [id, display_name, timezone, locale, status, created_at, updated_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string, maxLength: 200 }
+        logo_url: { type: string, nullable: true }
+        primary_color:
+          type: string
+          nullable: true
+          pattern: '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'
+        secondary_color:
+          type: string
+          nullable: true
+          pattern: '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'
+        timezone:
+          type: string
+          enum:
+            - America/Bogota
+            - America/Cali
+            - America/Medellin
+            - America/Barranquilla
+            - America/Cartagena
+            - UTC
+        locale:
+          type: string
+          pattern: '^[a-z]{2,3}(-[A-Z]{2})?$'
+        status:
+          type: string
+          enum: [active, archived]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer, format: int32 }
+    UpdateBrandingRequest:
+      type: object
+      required: [display_name, timezone, locale, expected_version]
+      properties:
+        display_name: { type: string, maxLength: 200 }
+        logo_url: { type: string, nullable: true }
+        primary_color:
+          type: string
+          nullable: true
+          pattern: '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'
+        secondary_color:
+          type: string
+          nullable: true
+          pattern: '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'
+        timezone:
+          type: string
+          enum:
+            - America/Bogota
+            - America/Cali
+            - America/Medellin
+            - America/Barranquilla
+            - America/Cartagena
+            - UTC
+        locale:
+          type: string
+          pattern: '^[a-z]{2,3}(-[A-Z]{2})?$'
+        expected_version:
+          type: integer
+          format: int32
+          minimum: 1
+
+    Problem:
+      description: RFC 7807 Problem Details object.
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Auth required.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Permiso insuficiente.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Recurso inexistente o archivado.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Concurrencia optimista (version mismatch).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

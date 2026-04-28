@@ -1,0 +1,474 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Authorization API
+  version: "0.1.0"
+  description: |
+    Endpoints HTTP del modulo `authorization` (RBAC con permisos por
+    namespace + scopes opcionales). Todas las rutas viven dentro del
+    contexto de un Tenant resuelto via `X-Tenant-Slug` o subdominio.
+
+    Errores: RFC 7807 (`application/problem+json`).
+servers:
+  - url: https://{tenant}.dominio.com
+    variables:
+      tenant:
+        default: acacias
+        description: Slug del tenant resuelto por subdominio.
+
+tags:
+  - name: roles
+    description: Gestion de roles del producto (semilla) y custom.
+  - name: permissions
+    description: Catalogo estatico de permisos del producto.
+  - name: assignments
+    description: Asignacion de roles a usuarios con scope opcional.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /roles:
+    get:
+      tags: [roles]
+      operationId: listRoles
+      summary: Lista roles activos
+      description: Requiere permiso `role.read`.
+      responses:
+        "200":
+          description: Lista de roles activos del tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Role"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [roles]
+      operationId: createRole
+      summary: Crea un rol custom
+      description: |
+        Requiere permiso `role.create`. El rol se crea con
+        `is_system=false`. Si se incluye `permission_ids`, se asignan
+        atomicamente al rol recien creado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoleRequest"
+      responses:
+        "201":
+          description: Rol creado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Nombre de rol ya existente.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /roles/{id}:
+    get:
+      tags: [roles]
+      operationId: getRole
+      summary: Obtiene un rol con sus permisos
+      description: Requiere permiso `role.read`.
+      parameters:
+        - $ref: "#/components/parameters/RoleID"
+      responses:
+        "200":
+          description: Rol con permisos asignados.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [roles]
+      operationId: updateRole
+      summary: Renombra/redescribe un rol y opcionalmente reemplaza permisos
+      description: |
+        Requiere permiso `role.update`. NO se permite sobre roles
+        `is_system=true` (devuelve 403). Aplica concurrencia optimista
+        via campo `version`.
+      parameters:
+        - $ref: "#/components/parameters/RoleID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+      responses:
+        "200":
+          description: Rol actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [roles]
+      operationId: deleteRole
+      summary: Archiva (soft delete) un rol custom
+      description: |
+        Requiere permiso `role.delete`. NO se permite sobre roles
+        `is_system=true` (devuelve 403).
+      parameters:
+        - $ref: "#/components/parameters/RoleID"
+      responses:
+        "204":
+          description: Rol archivado.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /permissions:
+    get:
+      tags: [permissions]
+      operationId: listPermissions
+      summary: Catalogo estatico de permisos
+      description: Requiere permiso `permission.read`.
+      responses:
+        "200":
+          description: Lista de permisos disponibles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Permission"
+
+  /users/{id}/roles:
+    post:
+      tags: [assignments]
+      operationId: assignRole
+      summary: Asigna un rol a un usuario
+      description: |
+        Requiere permiso `user.assign_role`. Acepta scope opcional:
+        `tenant` (sin scope_id), `tower` o `unit` (ambos requieren
+        scope_id).
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleRequest"
+      responses:
+        "201":
+          description: Asignacion creada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /users/{id}/roles/{role_id}:
+    delete:
+      tags: [assignments]
+      operationId: unassignRole
+      summary: Revoca un rol asignado a un usuario
+      description: |
+        Requiere permiso `user.unassign_role`. Marca la asignacion como
+        revocada (NO la elimina) con `revocation_reason` opcional.
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "204":
+          description: Asignacion revocada.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /users/{id}/permissions:
+    get:
+      tags: [assignments]
+      operationId: listUserPermissions
+      summary: Permisos efectivos de un usuario
+      description: |
+        Devuelve la union de namespaces de permisos efectivos del usuario
+        (todas sus asignaciones activas). Requiere permiso
+        `user.assign_role` o que el actor sea el propio usuario.
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Permisos efectivos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectivePermissions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    RoleID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Role:
+      type: object
+      required: [id, name, is_system, status, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        is_system:
+          type: boolean
+          description: |
+            true si el rol fue inyectado por la migracion seed del
+            producto. Roles is_system NO pueden ser editados/eliminados
+            por la API de gestion.
+        status:
+          type: string
+          enum: [active, archived]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    Permission:
+      type: object
+      required: [id, namespace, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: string
+          description: Identificador estable del permiso (ej. "package.deliver").
+          example: package.deliver
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+
+    Assignment:
+      type: object
+      required: [id, user_id, role_id, granted_at, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role_id:
+          type: string
+          format: uuid
+        scope_type:
+          type: string
+          nullable: true
+          enum: [tenant, tower, unit, null]
+        scope_id:
+          type: string
+          format: uuid
+          nullable: true
+        granted_by:
+          type: string
+          format: uuid
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        revocation_reason:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, revoked]
+
+    EffectivePermissions:
+      type: object
+      required: [user_id, permissions]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        permissions:
+          type: array
+          items:
+            type: string
+            example: package.deliver
+
+    CreateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permission_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateRoleRequest:
+      type: object
+      required: [name, version]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permission_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            Si se omite, los permisos no se modifican. Si se incluye,
+            reemplaza atomicamente la lista actual.
+        version:
+          type: integer
+
+    AssignRoleRequest:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          type: string
+          format: uuid
+        scope_type:
+          type: string
+          enum: [tenant, tower, unit]
+          nullable: true
+        scope_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Solicitud malformada.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Falta autenticacion.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Falta permiso o el rol es is_system.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Recurso no encontrado.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Conflicto (nombre tomado, asignacion duplicada).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"

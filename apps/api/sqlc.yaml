@@ -1,0 +1,43 @@
+version: "2"
+sql:
+  - name: identity
+    engine: postgresql
+    queries: internal/modules/identity/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: identitydb
+        out: internal/modules/identity/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        emit_pointers_for_null_types: true
+        rename:
+          mfa: MFA
+  - name: authorization
+    engine: postgresql
+    queries: internal/modules/authorization/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: authzdb
+        out: internal/modules/authorization/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        emit_pointers_for_null_types: true
+  - name: tenant_config
+    engine: postgresql
+    queries: internal/modules/tenant_config/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: tenantcfgdb
+        out: internal/modules/tenant_config/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        emit_pointers_for_null_types: true

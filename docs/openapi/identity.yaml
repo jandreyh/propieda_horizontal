@@ -1,0 +1,316 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Identity API
+  version: "1.0.0"
+  description: |
+    Endpoints del modulo `identity` (autenticacion / sesiones / MFA) para
+    el SaaS multi-tenant de Propiedad Horizontal. Todos los endpoints
+    operan en el contexto de un tenant, resuelto por subdominio o por
+    el header `X-Tenant-Slug`.
+
+    Errores: todos los responses de error usan `application/problem+json`
+    siguiendo RFC 7807.
+
+servers:
+  - url: https://{tenant}.{baseDomain}
+    description: Tenant resuelto por subdominio.
+    variables:
+      tenant:
+        default: demo
+      baseDomain:
+        default: ph.local
+
+tags:
+  - name: auth
+    description: Login, MFA, refresh, logout.
+  - name: profile
+    description: Perfil del usuario autenticado.
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Inicia sesion del usuario en el tenant
+      description: |
+        Acepta email o `<doc_type>:<doc_number>` como identificador. Si el
+        usuario tiene MFA enrolado, devuelve un `pre_auth_token` en lugar
+        de un access/refresh token. El cliente debe completar
+        `/auth/mfa/verify` para obtener la sesion completa.
+      operationId: identityLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login exitoso (con o sin MFA pendiente).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '423':
+          $ref: '#/components/responses/Locked'
+
+  /auth/mfa/verify:
+    post:
+      tags: [auth]
+      summary: Verifica el segundo factor TOTP
+      operationId: identityMFAVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAVerifyRequest'
+      responses:
+        '200':
+          description: MFA verificado; sesion completa emitida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFAVerifyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rota el refresh token
+      description: |
+        Marca el refresh token recibido como `revoked` con motivo `rotated`
+        y emite un nuevo par access/refresh encadenado. Si se detecta
+        reuso de un token previamente rotado, toda la cadena se invalida.
+      operationId: identityRefresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Nuevo par de tokens emitido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoca la sesion actual
+      operationId: identityLogout
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Sesion revocada.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /me:
+    get:
+      tags: [profile]
+      summary: Devuelve el perfil del usuario autenticado
+      operationId: identityMe
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Datos publicos del usuario.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token JWT firmado con EdDSA por el servicio. Claims relevantes:
+        `sub` (user id), `tid` (tenant id), `sid` (session id), `roles`.
+
+  schemas:
+    DocumentType:
+      type: string
+      enum: [CC, CE, PA, TI, RC, NIT]
+      description: Tipo de documento de identidad colombiano.
+
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: |
+            Email o `<doc_type>:<doc_number>` (ej. `CC:12345`).
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          example: "S3cret!"
+
+    LoginResponse:
+      type: object
+      required: [mfa_required]
+      properties:
+        mfa_required:
+          type: boolean
+        pre_auth_token:
+          type: string
+          description: JWT corto (ttl 5min) que solo da acceso a `/auth/mfa/verify`.
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Segundos hasta expiracion del access_token.
+        token_type:
+          type: string
+          example: Bearer
+
+    MFAVerifyRequest:
+      type: object
+      required: [pre_auth_token, code]
+      properties:
+        pre_auth_token:
+          type: string
+        code:
+          type: string
+          description: Codigo TOTP de 6 digitos generado por el authenticator.
+
+    MFAVerifyResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in, token_type]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        token_type:
+          type: string
+          example: Bearer
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in, token_type]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        token_type:
+          type: string
+
+    User:
+      type: object
+      required: [id, document_type, document_number, names, last_names]
+      properties:
+        id:
+          type: string
+          format: uuid
+        document_type:
+          $ref: '#/components/schemas/DocumentType'
+        document_number:
+          type: string
+        names:
+          type: string
+        last_names:
+          type: string
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        mfa_enrolled_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "urn:ph:problem:unauthorized"
+        title:
+          type: string
+          example: "Unauthorized"
+        status:
+          type: integer
+          example: 401
+        detail:
+          type: string
+        instance:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Request invalido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Credenciales invalidas o token no provisto.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Usuario no tiene permitido el acceso.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Locked:
+      description: Cuenta bloqueada por demasiados intentos fallidos.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
