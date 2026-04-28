@@ -76,7 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_visitor_entries_unit_time
 
 -- user_role_assignments: lookup rapido de asignaciones activas por usuario
 CREATE INDEX IF NOT EXISTS idx_user_role_assignments_user_active
-    ON user_role_assignments (user_id, role_id) WHERE revoked_at IS NULL AND deleted_at IS NULL;
+    ON user_role_assignments (user_id, role_id) WHERE revoked_at IS NULL;
 
 -- announcements: feed ordenado pinned + recientes
 CREATE INDEX IF NOT EXISTS idx_announcements_feed_order
