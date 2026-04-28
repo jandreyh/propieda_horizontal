@@ -35,6 +35,9 @@ import (
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
 	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
+	pkgusecases "github.com/saas-ph/api/internal/modules/packages/application/usecases"
+	pkgpersistence "github.com/saas-ph/api/internal/modules/packages/infrastructure/persistence"
+	pkghttp "github.com/saas-ph/api/internal/modules/packages/interfaces/http"
 	peoplepersistence "github.com/saas-ph/api/internal/modules/people/infrastructure/persistence"
 	peoplehttp "github.com/saas-ph/api/internal/modules/people/interfaces/http"
 	rspersistence "github.com/saas-ph/api/internal/modules/residential_structure/infrastructure/persistence"
@@ -239,6 +242,18 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				PreRegRepo:    accesspersistence.NewPreRegistrationRepository(),
 				EntryRepo:     accesspersistence.NewVisitorEntryRepository(),
 				Now:           time.Now,
+			})
+
+			// Modulo packages (correspondencia/paqueteria).
+			pkghttp.Mount(tr, pkghttp.Dependencies{
+				Logger:      logger,
+				Packages:    pkgpersistence.NewPackageRepository(),
+				Categories:  pkgpersistence.NewCategoryRepository(),
+				Deliveries:  pkgpersistence.NewDeliveryRepository(),
+				Outbox:      pkgpersistence.NewOutboxRepository(),
+				TxRunner:    pkgpersistence.NewTenantTxRunner(),
+				Idempotency: pkgusecases.NewIdempotencyCache(24*time.Hour, time.Now),
+				Now:         time.Now,
 			})
 		})
 	}

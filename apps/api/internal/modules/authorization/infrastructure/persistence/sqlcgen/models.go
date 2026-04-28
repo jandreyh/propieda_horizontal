@@ -29,6 +29,74 @@ type BlacklistedPerson struct {
 	Version          int32
 }
 
+type Package struct {
+	ID                  pgtype.UUID
+	UnitID              pgtype.UUID
+	RecipientName       string
+	CategoryID          pgtype.UUID
+	ReceivedEvidenceUrl *string
+	Carrier             *string
+	TrackingNumber      *string
+	ReceivedByUserID    pgtype.UUID
+	ReceivedAt          pgtype.Timestamptz
+	DeliveredAt         pgtype.Timestamptz
+	ReturnedAt          pgtype.Timestamptz
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	DeletedBy           pgtype.UUID
+	Version             int32
+}
+
+type PackageCategory struct {
+	ID               pgtype.UUID
+	Name             string
+	RequiresEvidence bool
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+}
+
+type PackageDeliveryEvent struct {
+	ID                  pgtype.UUID
+	PackageID           pgtype.UUID
+	DeliveredToUserID   pgtype.UUID
+	RecipientNameManual *string
+	DeliveryMethod      string
+	SignatureUrl        *string
+	PhotoEvidenceUrl    *string
+	DeliveredByUserID   pgtype.UUID
+	DeliveredAt         pgtype.Timestamptz
+	Notes               *string
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	DeletedBy           pgtype.UUID
+	Version             int32
+}
+
+type PackageOutboxEvent struct {
+	ID            pgtype.UUID
+	PackageID     pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
+}
+
 type Permission struct {
 	ID          pgtype.UUID
 	Namespace   string

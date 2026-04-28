@@ -89,3 +89,15 @@ sql:
         emit_interface: true
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+  - name: packages
+    engine: postgresql
+    queries: internal/modules/packages/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: packagesdb
+        out: internal/modules/packages/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true

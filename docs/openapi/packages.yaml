@@ -1,0 +1,412 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Packages API
+  description: |
+    Modulo `packages` (paqueteria / correspondencia). Expone:
+      * recepcion de paquetes en porteria,
+      * entrega al residente (por QR o manual con firma/foto),
+      * devolucion al transportador,
+      * dashboard del residente y de porteria,
+      * catalogo de categorias.
+
+    Multi-tenant por subdominio / header `X-Tenant-Slug`; el tenant es
+    implicito en la base.
+
+    El modulo emite eventos via outbox modulo-local (ADR 0005):
+      * package.received  (al recibir el paquete),
+      * package.delivered (al entregar al residente),
+      * package.reminder  (cron diario tras 3 dias en porteria).
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: packages
+    description: Paquetes en porteria.
+  - name: package-categories
+    description: Catalogo de categorias.
+
+paths:
+  /packages:
+    post:
+      tags: [packages]
+      summary: Recibir un paquete en porteria
+      description: |
+        Requiere permiso `package.create`. Crea el paquete en estado
+        `received` y encola el evento `package.received` en el outbox
+        modulo-local. Si la categoria del paquete requiere evidencia
+        (p. ej. "Refrigerado"), `received_evidence_url` es OBLIGATORIO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePackageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    get:
+      tags: [packages]
+      summary: Listar paquetes
+      description: |
+        Requiere permiso `package.read`. Filtra por `unit_id` (paquetes
+        de una unidad) o por `status` (dashboard de porteria).
+      parameters:
+        - name: unit_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [received, delivered, returned]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListPackagesResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /packages/{id}:
+    get:
+      tags: [packages]
+      summary: Obtener un paquete por id
+      description: Requiere permiso `package.read`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /packages/{id}/deliver-by-qr:
+    post:
+      tags: [packages]
+      summary: Entregar el paquete al residente identificado por QR
+      description: |
+        Requiere permiso `package.deliver`. Bloqueo optimista: si la
+        version del paquete cambio (otra goroutine entrego primero) se
+        responde 409 `version-conflict`. Si el paquete NO esta en
+        estado `received`, se responde 409 `invalid-transition`.
+
+        `idempotency_key` (opcional) permite que reintentos del cliente
+        en menos de 24h reciban la misma respuesta sin doble entrega.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverByQRRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /packages/{id}/deliver-manual:
+    post:
+      tags: [packages]
+      summary: Entregar el paquete con firma o foto del receptor
+      description: |
+        Requiere permiso `package.deliver`. Al menos UNA de
+        `signature_url` o `photo_evidence_url` es OBLIGATORIA. Mismo
+        bloqueo optimista y semantica de idempotency que
+        `deliver-by-qr`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverManualRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /packages/{id}/return:
+    post:
+      tags: [packages]
+      summary: Devolver el paquete al transportador
+      description: |
+        Requiere permiso `package.deliver`. Marca el paquete como
+        `returned`. Solo se permite desde el estado `received`. Mismo
+        bloqueo optimista que los deliver-*.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnPackageRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /package-categories:
+    get:
+      tags: [package-categories]
+      summary: Listar categorias activas
+      description: Requiere permiso `package.read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCategoriesResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not Found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflict (transicion invalida o version_conflict)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:     { type: string }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+      required: [type, title, status]
+
+    PackageStatus:
+      type: string
+      enum: [received, delivered, returned]
+
+    DeliveryMethod:
+      type: string
+      enum: [qr, manual]
+
+    CreatePackageRequest:
+      type: object
+      required: [unit_id, recipient_name, received_by_user_id]
+      properties:
+        unit_id:                 { type: string, format: uuid }
+        recipient_name:          { type: string }
+        category_id:             { type: string, format: uuid, nullable: true }
+        category_name:
+          type: string
+          nullable: true
+          description: Alternativa a category_id (resuelve por nombre).
+        carrier:                 { type: string, nullable: true }
+        tracking_number:         { type: string, nullable: true }
+        received_evidence_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL de la foto de recepcion. OBLIGATORIO si la categoria requiere evidencia.
+        received_by_user_id:     { type: string, format: uuid }
+
+    DeliverByQRRequest:
+      type: object
+      required: [delivered_to_user_id, guard_id]
+      properties:
+        delivered_to_user_id: { type: string, format: uuid }
+        guard_id:             { type: string, format: uuid }
+        idempotency_key:
+          type: string
+          description: |
+            Idempotency token. Si llega el mismo en menos de 24h, el
+            servidor responde con la respuesta cacheada de la primera
+            llamada (sin doble entrega).
+        notes: { type: string }
+
+    DeliverManualRequest:
+      type: object
+      required: [guard_id]
+      description: |
+        Se exige al menos UNA de `signature_url` o `photo_evidence_url`
+        (validado por la capa de aplicacion).
+      properties:
+        recipient_name_manual:
+          type: string
+          description: Nombre del receptor cuando NO esta registrado como usuario.
+        signature_url:        { type: string, format: uri }
+        photo_evidence_url:   { type: string, format: uri }
+        guard_id:             { type: string, format: uuid }
+        idempotency_key:      { type: string }
+        notes:                { type: string }
+
+    ReturnPackageRequest:
+      type: object
+      required: [guard_id]
+      properties:
+        guard_id: { type: string, format: uuid }
+        notes:    { type: string }
+
+    PackageResponse:
+      type: object
+      required:
+        - id
+        - unit_id
+        - recipient_name
+        - received_by_user_id
+        - received_at
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:                    { type: string, format: uuid }
+        unit_id:               { type: string, format: uuid }
+        recipient_name:        { type: string }
+        category_id:           { type: string, format: uuid, nullable: true }
+        received_evidence_url: { type: string, format: uri, nullable: true }
+        carrier:               { type: string, nullable: true }
+        tracking_number:       { type: string, nullable: true }
+        received_by_user_id:   { type: string, format: uuid }
+        received_at:           { type: string, format: date-time }
+        delivered_at:          { type: string, format: date-time, nullable: true }
+        returned_at:           { type: string, format: date-time, nullable: true }
+        status:                { $ref: '#/components/schemas/PackageStatus' }
+        created_at:            { type: string, format: date-time }
+        updated_at:            { type: string, format: date-time }
+        version:               { type: integer }
+
+    ListPackagesResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PackageResponse' }
+        total: { type: integer }
+
+    DeliveryEventResponse:
+      type: object
+      required:
+        - id
+        - package_id
+        - delivery_method
+        - delivered_by_user_id
+        - delivered_at
+        - status
+      properties:
+        id:                     { type: string, format: uuid }
+        package_id:             { type: string, format: uuid }
+        delivered_to_user_id:   { type: string, format: uuid, nullable: true }
+        recipient_name_manual:  { type: string, nullable: true }
+        delivery_method:        { $ref: '#/components/schemas/DeliveryMethod' }
+        signature_url:          { type: string, format: uri, nullable: true }
+        photo_evidence_url:     { type: string, format: uri, nullable: true }
+        delivered_by_user_id:   { type: string, format: uuid }
+        delivered_at:           { type: string, format: date-time }
+        notes:                  { type: string, nullable: true }
+        status:                 { type: string, enum: [completed, voided] }
+
+    DeliverResponse:
+      type: object
+      required: [package, event]
+      properties:
+        package: { $ref: '#/components/schemas/PackageResponse' }
+        event:   { $ref: '#/components/schemas/DeliveryEventResponse' }
+
+    CategoryResponse:
+      type: object
+      required: [id, name, requires_evidence]
+      properties:
+        id:                { type: string, format: uuid }
+        name:              { type: string }
+        requires_evidence: { type: boolean }
+
+    ListCategoriesResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CategoryResponse' }
+        total: { type: integer }
