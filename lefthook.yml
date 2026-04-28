@@ -1,0 +1,37 @@
+# Lefthook git hooks for SaaS Propiedad Horizontal.
+# Instalar:
+#   go install github.com/evilmartians/lefthook@latest
+#   lefthook install
+#
+# Hooks:
+#   - pre-commit: gofmt, goimports, golangci-lint sobre archivos staged.
+#   - commit-msg: validacion del prefijo de fase (ej. "fase-N: ...").
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "apps/api/**/*.go"
+      run: gofmt -l -d -e {staged_files} | tee /dev/stderr | (! read)
+    goimports:
+      glob: "apps/api/**/*.go"
+      run: goimports -l -d -local github.com/saas-ph/api {staged_files} | tee /dev/stderr | (! read)
+    golangci-lint:
+      glob: "apps/api/**/*.go"
+      run: golangci-lint run ./apps/api/...
+    no-tenant-id-tenant-db:
+      glob: "migrations/tenant/*.sql"
+      run: |
+        if grep -nE '\btenant_id\b' {staged_files}; then
+          echo "ERROR: 'tenant_id' prohibido en migraciones del Tenant DB (ver CLAUDE.md)";
+          exit 1;
+        fi
+
+commit-msg:
+  commands:
+    fase-prefix:
+      run: |
+        if ! grep -qE '^(fase-[0-9]+|chore|fix|feat|docs|refactor|test): ' {1}; then
+          echo "Commit message must start with 'fase-N: ' or conventional prefix.";
+          exit 1;
+        fi

@@ -1,0 +1,56 @@
+version: "3.9"
+
+# Entorno local para desarrollo del SaaS Propiedad Horizontal.
+# Levanta dos instancias Postgres: la base central (Control Plane) y una
+# base "template" que se clona por tenant cuando se provisiona uno nuevo.
+#
+# Uso:
+#   docker compose -f deployments/docker-compose.local.yml up -d
+#   docker compose -f deployments/docker-compose.local.yml ps
+#
+# Conexiones:
+#   Control Plane:    postgres://ph:ph@localhost:5432/ph_central
+#   Tenant template:  postgres://ph:ph@localhost:5433/ph_tenant_template
+
+services:
+  pg-central:
+    image: postgres:18-alpine
+    container_name: ph-pg-central
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ph
+      POSTGRES_PASSWORD: ph
+      POSTGRES_DB: ph_central
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-central-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ph -d ph_central"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pg-tenant-template:
+    image: postgres:18-alpine
+    container_name: ph-pg-tenant-template
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ph
+      POSTGRES_PASSWORD: ph
+      POSTGRES_DB: ph_tenant_template
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-tenant-template-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ph -d ph_tenant_template"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pg-central-data:
+  pg-tenant-template-data:

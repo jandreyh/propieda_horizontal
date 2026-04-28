@@ -1,0 +1,73 @@
+# golangci-lint v2 configuration — SaaS Propiedad Horizontal
+# Estricto. Sin warnings antes de merge.
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.26"
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gosec
+    - misspell
+    - unconvert
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+    - contextcheck
+    - errorlint
+    - copyloopvar
+    - nilerr
+    - prealloc
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: error-return
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+    gosec:
+      excludes:
+        - G104
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      - path: internal/platform/db/sqlc/
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/saas-ph/api
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
