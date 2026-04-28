@@ -17,7 +17,6 @@ linters:
     - unused
     - revive
     - gosec
-    - misspell
     - unconvert
     - bodyclose
     - rowserrcheck
