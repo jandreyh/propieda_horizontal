@@ -113,8 +113,8 @@ lefthook install
 
 | Bloque | Fases | Comando | Estado |
 |--------|-------|---------|--------|
-| MVP | 0-7 | `/fase N` | Completas (0,1,2,3,4,5,6,7) |
-| POST-MVP | 8-15 | `/descubrir N` -> spec frozen -> `/fase N` | Pendientes |
+| MVP | 0-7 | `/fase N` | Completas |
+| POST-MVP | 8-15 | `/descubrir N` -> spec -> `/fase N` | Specs Frozen-Auto + migraciones (Go pendiente) |
 
 Modulos MVP entregados:
 - Plataforma: chi server + middlewares (request_id, logging, recovery,
