@@ -1,0 +1,736 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Parking API
+  description: |
+    Modulo `parking` (parqueaderos). Expone:
+      * CRUD de espacios de parqueadero,
+      * asignacion y liberacion de espacios a unidades inmobiliarias,
+      * reservas de visitantes con prevencion de doble reserva,
+      * sorteos deterministas con semilla reproducible,
+      * vista del guarda para verificacion en porteria.
+
+    Multi-tenant por subdominio / header `X-Tenant-Slug`; el tenant es
+    implicito en la base.
+
+    El modulo emite eventos via outbox modulo-local (ADR 0005):
+      * parking.assigned  (al asignar un espacio),
+      * parking.released  (al liberar una asignacion),
+      * parking.visitor_reservation_created  (al crear reserva visitante),
+      * parking.visitor_reservation_expiring (proximo a expirar),
+      * parking.lottery_published (al publicar resultados de sorteo).
+
+    Errores siguen RFC 7807 (Problem Details) con content-type
+    `application/problem+json`.
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: parking-spaces
+    description: Espacios fisicos de parqueadero.
+  - name: parking-assignments
+    description: Asignacion de espacios a unidades.
+  - name: parking-visitor-reservations
+    description: Reservas de parqueadero para visitantes.
+  - name: parking-lotteries
+    description: Sorteos de parqueaderos.
+  - name: parking-guard
+    description: Vista del guarda para verificacion.
+
+paths:
+  /parking-spaces:
+    post:
+      tags: [parking-spaces]
+      summary: Crear un espacio de parqueadero
+      description: |
+        Requiere permiso `parking.write`. Crea el espacio en estado
+        `active`. Si el codigo ya existe, responde 409
+        `space-code-duplicate`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpaceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [parking-spaces]
+      summary: Listar espacios de parqueadero activos
+      description: |
+        Requiere permiso `parking.read`. Devuelve todos los espacios
+        activos (no soft-deleted) ordenados por codigo.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSpacesResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /parking-spaces/{id}:
+    put:
+      tags: [parking-spaces]
+      summary: Actualizar un espacio de parqueadero
+      description: |
+        Requiere permiso `parking.write`. Usa concurrencia optimista via
+        campo `version` en el body. Si la version no coincide, responde
+        409 `version-conflict`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSpaceRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /parking-spaces/{id}/assign:
+    post:
+      tags: [parking-assignments]
+      summary: Asignar un espacio a una unidad
+      description: |
+        Requiere permiso `parking.assign`. Si el espacio ya tiene una
+        asignacion activa, la cierra (establece `until_date`) y crea una
+        nueva en la misma transaccion. Si el espacio es de visitante,
+        responde 400. Si hay race condition y otra goroutine creo la
+        asignacion primero, responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: ID del espacio de parqueadero.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignSpaceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /parking-assignments/{id}/release:
+    post:
+      tags: [parking-assignments]
+      summary: Liberar una asignacion de parqueadero
+      description: |
+        Requiere permiso `parking.assign`. Cierra la asignacion activa
+        (establece `until_date` a ahora, cambia status a `closed`).
+        Si la asignacion no esta activa, responde 409. Si la version
+        cambio, responde 409 `version-conflict`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: ID de la asignacion.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseAssignmentRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /units/{id}/parking:
+    get:
+      tags: [parking-assignments]
+      summary: Obtener parqueaderos de una unidad
+      description: |
+        Requiere permiso `parking.read`. Devuelve las asignaciones
+        activas y las reservas de visitante de la unidad. El residente
+        solo puede consultar su propia unidad (RBAC lo restringe).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: ID de la unidad inmobiliaria.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitParkingResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /parking-visitor-reservations:
+    post:
+      tags: [parking-visitor-reservations]
+      summary: Crear una reserva de parqueadero para visitante
+      description: |
+        Requiere permiso `parking.visitor.create`. El espacio debe ser de
+        tipo visitante (`is_visitor = true`). Si el slot ya esta reservado
+        para ese espacio, responde 409 `slot-conflict`. Idempotencia
+        opcional via `idempotency_key`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVisitorReservationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [parking-visitor-reservations]
+      summary: Listar reservas de visitante por fecha
+      description: |
+        Requiere permiso `parking.read`. Filtra por `date` (YYYY-MM-DD).
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          description: Fecha en formato YYYY-MM-DD.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReservationsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /parking-visitor-reservations/{id}/cancel:
+    post:
+      tags: [parking-visitor-reservations]
+      summary: Cancelar una reserva de visitante
+      description: |
+        Requiere permiso `parking.write` u ownership de la reserva.
+        Solo se permite cancelar desde estados `pending` o `confirmed`.
+        Desde estados terminales (`cancelled`, `no_show`, `consumed`)
+        responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /parking-lotteries/run:
+    post:
+      tags: [parking-lotteries]
+      summary: Ejecutar un sorteo de parqueaderos
+      description: |
+        Requiere permiso `parking.lottery.run`. Ejecuta un sorteo
+        determinista con el algoritmo SHA-256 + Fisher-Yates. El seed
+        se hashea y persiste para reproducibilidad. Si hay mas unidades
+        elegibles que espacios, las sobrantes quedan en lista de espera
+        (`waitlist`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunLotteryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotteryResultsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /parking-lotteries/{id}/results:
+    get:
+      tags: [parking-lotteries]
+      summary: Obtener resultados de un sorteo
+      description: |
+        Requiere permiso `parking.read`. Devuelve el sorteo y sus
+        resultados ordenados por posicion.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotteryResultsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /guard/parking/today:
+    get:
+      tags: [parking-guard]
+      summary: Vista del guarda para hoy
+      description: |
+        Requiere permiso `parking.guard.read`. Devuelve una vista
+        simplificada con los campos estrictamente necesarios para
+        verificacion en porteria: codigo del espacio, tipo, unidad,
+        placa esperada, nombre de visitante y slot. NO incluye datos
+        sensibles (cartera, datos personales, etc.).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardParkingTodayResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not Found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflict (doble reserva, doble asignacion, version_conflict)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:     { type: string }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+      required: [type, title, status]
+
+    SpaceType:
+      type: string
+      enum: [covered, uncovered, motorcycle, bicycle, visitor, disabled, electric, double]
+
+    SpaceStatus:
+      type: string
+      enum: [active, inactive, maintenance, archived]
+
+    AssignmentStatus:
+      type: string
+      enum: [active, closed, archived]
+
+    ReservationStatus:
+      type: string
+      enum: [pending, confirmed, cancelled, no_show, consumed]
+
+    LotteryStatus:
+      type: string
+      enum: [draft, completed, cancelled, archived]
+
+    LotteryResultStatus:
+      type: string
+      enum: [allocated, waitlist, declined, archived]
+
+    CreateSpaceRequest:
+      type: object
+      required: [code, type]
+      properties:
+        code:
+          type: string
+          description: Codigo fisico del espacio (ej. "A-101"). UNIQUE entre activos.
+          pattern: "^[A-Za-z0-9\\-_]{1,20}$"
+        type:         { $ref: '#/components/schemas/SpaceType' }
+        structure_id: { type: string, format: uuid, nullable: true }
+        level:        { type: string, nullable: true }
+        zone:         { type: string, nullable: true }
+        monthly_fee:
+          type: number
+          format: double
+          nullable: true
+          description: Tarifa mensual (hook para Fase 9, nullable en V1).
+        is_visitor:
+          type: boolean
+          default: false
+          description: Si el espacio es para visitantes.
+        notes:        { type: string, nullable: true }
+
+    UpdateSpaceRequest:
+      type: object
+      required: [code, type, status, version]
+      properties:
+        code:
+          type: string
+          pattern: "^[A-Za-z0-9\\-_]{1,20}$"
+        type:         { $ref: '#/components/schemas/SpaceType' }
+        structure_id: { type: string, format: uuid, nullable: true }
+        level:        { type: string, nullable: true }
+        zone:         { type: string, nullable: true }
+        monthly_fee:  { type: number, format: double, nullable: true }
+        is_visitor:   { type: boolean }
+        notes:        { type: string, nullable: true }
+        status:       { $ref: '#/components/schemas/SpaceStatus' }
+        version:
+          type: integer
+          description: Version esperada para concurrencia optimista.
+
+    SpaceResponse:
+      type: object
+      required:
+        - id
+        - code
+        - type
+        - is_visitor
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:           { type: string, format: uuid }
+        code:         { type: string }
+        type:         { $ref: '#/components/schemas/SpaceType' }
+        structure_id: { type: string, format: uuid, nullable: true }
+        level:        { type: string, nullable: true }
+        zone:         { type: string, nullable: true }
+        monthly_fee:  { type: number, format: double, nullable: true }
+        is_visitor:   { type: boolean }
+        notes:        { type: string, nullable: true }
+        status:       { $ref: '#/components/schemas/SpaceStatus' }
+        created_at:   { type: string, format: date-time }
+        updated_at:   { type: string, format: date-time }
+        version:      { type: integer }
+
+    ListSpacesResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SpaceResponse' }
+        total: { type: integer }
+
+    AssignSpaceRequest:
+      type: object
+      required: [unit_id]
+      properties:
+        unit_id:    { type: string, format: uuid }
+        vehicle_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID opcional del vehiculo esperado en el espacio.
+        notes:      { type: string, nullable: true }
+
+    ReleaseAssignmentRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+          description: Motivo de la liberacion (opcional).
+
+    AssignmentResponse:
+      type: object
+      required:
+        - id
+        - parking_space_id
+        - unit_id
+        - since_date
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:                 { type: string, format: uuid }
+        parking_space_id:   { type: string, format: uuid }
+        unit_id:            { type: string, format: uuid }
+        vehicle_id:         { type: string, format: uuid, nullable: true }
+        assigned_by_user_id: { type: string, format: uuid, nullable: true }
+        since_date:         { type: string, format: date-time }
+        until_date:         { type: string, format: date-time, nullable: true }
+        notes:              { type: string, nullable: true }
+        status:             { $ref: '#/components/schemas/AssignmentStatus' }
+        created_at:         { type: string, format: date-time }
+        updated_at:         { type: string, format: date-time }
+        version:            { type: integer }
+
+    UnitParkingResponse:
+      type: object
+      required: [assignments, reservations]
+      properties:
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/AssignmentResponse' }
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/ReservationResponse' }
+
+    CreateVisitorReservationRequest:
+      type: object
+      required: [parking_space_id, unit_id, visitor_name, slot_start_at, slot_end_at]
+      properties:
+        parking_space_id: { type: string, format: uuid }
+        unit_id:
+          type: string
+          format: uuid
+          description: Unidad anfitriona que solicita la reserva.
+        visitor_name:     { type: string }
+        visitor_document:
+          type: string
+          nullable: true
+          description: Documento del visitante (opcional).
+        vehicle_plate:
+          type: string
+          nullable: true
+          description: Placa del vehiculo del visitante (opcional).
+        slot_start_at:
+          type: string
+          format: date-time
+          description: Inicio del slot de reserva (RFC3339).
+        slot_end_at:
+          type: string
+          format: date-time
+          description: Fin del slot de reserva (RFC3339). Max 12h.
+        idempotency_key:
+          type: string
+          nullable: true
+          description: |
+            Clave de idempotencia. Si llega la misma en menos de 24h, el
+            servidor responde con la respuesta cacheada de la primera
+            llamada (sin doble reserva).
+
+    ReservationResponse:
+      type: object
+      required:
+        - id
+        - parking_space_id
+        - unit_id
+        - requested_by
+        - visitor_name
+        - slot_start_at
+        - slot_end_at
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:               { type: string, format: uuid }
+        parking_space_id: { type: string, format: uuid }
+        unit_id:          { type: string, format: uuid }
+        requested_by:     { type: string, format: uuid }
+        visitor_name:     { type: string }
+        visitor_document: { type: string, nullable: true }
+        vehicle_plate:    { type: string, nullable: true }
+        slot_start_at:    { type: string, format: date-time }
+        slot_end_at:      { type: string, format: date-time }
+        status:           { $ref: '#/components/schemas/ReservationStatus' }
+        created_at:       { type: string, format: date-time }
+        updated_at:       { type: string, format: date-time }
+        version:          { type: integer }
+
+    ListReservationsResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReservationResponse' }
+        total: { type: integer }
+
+    RunLotteryRequest:
+      type: object
+      required: [name, seed, space_ids, eligible_units]
+      properties:
+        name:
+          type: string
+          description: Nombre descriptivo del sorteo.
+        seed:
+          type: string
+          description: |
+            Semilla del sorteo. Se hashea con SHA-256 y se persiste para
+            reproducibilidad. Puede ser un string arbitrario (ej. acta
+            del consejo).
+        space_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: IDs de los espacios a sortear.
+        eligible_units:
+          type: array
+          items: { type: string, format: uuid }
+          description: IDs de las unidades elegibles para el sorteo.
+
+    LotteryRunResponse:
+      type: object
+      required:
+        - id
+        - name
+        - seed_hash
+        - executed_at
+        - executed_by
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        seed_hash:
+          type: string
+          description: Hash SHA-256 del seed (hex). Para reproducir el sorteo.
+        executed_at: { type: string, format: date-time }
+        executed_by: { type: string, format: uuid }
+        status:      { $ref: '#/components/schemas/LotteryStatus' }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+        version:     { type: integer }
+
+    LotteryResultResponse:
+      type: object
+      required:
+        - id
+        - lottery_run_id
+        - unit_id
+        - position
+        - status
+      properties:
+        id:               { type: string, format: uuid }
+        lottery_run_id:   { type: string, format: uuid }
+        unit_id:          { type: string, format: uuid }
+        parking_space_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null si la unidad quedo en lista de espera.
+        position:         { type: integer }
+        status:           { $ref: '#/components/schemas/LotteryResultStatus' }
+
+    LotteryResultsResponse:
+      type: object
+      required: [run, results]
+      properties:
+        run:     { $ref: '#/components/schemas/LotteryRunResponse' }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/LotteryResultResponse' }
+
+    GuardParkingEntryResponse:
+      type: object
+      required: [space_code, space_type, entry_type]
+      description: |
+        Entrada individual en la vista del guarda. Solo contiene campos
+        necesarios para verificacion; NO incluye datos sensibles
+        (cartera, datos personales del residente, etc.).
+      properties:
+        space_code:    { type: string }
+        space_type:    { $ref: '#/components/schemas/SpaceType' }
+        unit_id:       { type: string, format: uuid, nullable: true }
+        vehicle_plate: { type: string, nullable: true }
+        visitor_name:  { type: string, nullable: true }
+        slot_start_at: { type: string, format: date-time, nullable: true }
+        slot_end_at:   { type: string, format: date-time, nullable: true }
+        entry_type:
+          type: string
+          enum: [assignment, visitor]
+          description: Tipo de entrada (asignacion permanente o visitante).
+
+    GuardParkingTodayResponse:
+      type: object
+      required: [date, entries, total]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Fecha de la vista (YYYY-MM-DD).
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/GuardParkingEntryResponse' }
+        total: { type: integer }

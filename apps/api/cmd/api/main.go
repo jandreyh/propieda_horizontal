@@ -33,6 +33,8 @@ import (
 	accesshttp "github.com/saas-ph/api/internal/modules/access_control/interfaces/http"
 	annpersistence "github.com/saas-ph/api/internal/modules/announcements/infrastructure/persistence"
 	annhttp "github.com/saas-ph/api/internal/modules/announcements/interfaces/http"
+	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
+	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
 	authzpersistence "github.com/saas-ph/api/internal/modules/authorization/infrastructure/persistence"
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
@@ -266,6 +268,20 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				AcksRepo:          annpersistence.NewAckRepository(),
 				TxRunner:          annpersistence.NewTenantTxRunner(),
 				Now:               time.Now,
+			})
+
+			// Modulo parking (parqueaderos).
+			parkinghttp.Mount(tr, parkinghttp.Dependencies{
+				Logger:       logger,
+				Spaces:       parkingpersistence.NewSpaceRepository(),
+				Assignments:  parkingpersistence.NewAssignmentRepository(),
+				History:      parkingpersistence.NewAssignmentHistoryRepository(),
+				Reservations: parkingpersistence.NewVisitorReservationRepository(),
+				Lotteries:    parkingpersistence.NewLotteryRunRepository(),
+				Results:      parkingpersistence.NewLotteryResultRepository(),
+				Outbox:       parkingpersistence.NewOutboxRepository(),
+				TxRunner:     parkingpersistence.NewTenantTxRunner(),
+				Now:          time.Now,
 			})
 		})
 	}
