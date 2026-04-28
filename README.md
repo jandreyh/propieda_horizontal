@@ -139,10 +139,10 @@ Frontends scaffolded:
 - `apps/mobile` — Expo SDK 55 (RN 0.83.9, TypeScript). Template
   blank-typescript. TypeScript check limpio.
 
-Runtime contra Postgres 18: backend Go compila y tests unitarios pasan
-(26 paquetes). La verificacion end-to-end con Docker Compose (migraciones,
-smoke test, integracion) queda pendiente de ejecutar con Docker engine
-activo (ver runbook).
+Runtime verificado contra PostgreSQL 18.1 (2026-04-28):
+- Migraciones central (1) y tenant (18) aplicadas, reversibilidad probada.
+- API arranca: `/health` y `/ready` responden 200.
+- Tests unitarios + integracion: 26 paquetes, todos pasan.
 
 ## Decisiones arquitectonicas (ADRs)
 
