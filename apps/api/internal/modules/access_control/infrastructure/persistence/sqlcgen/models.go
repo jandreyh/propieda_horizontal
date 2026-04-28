@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package identitydb
+package accessdb
 
 import (
 	"net/netip"

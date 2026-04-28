@@ -10,6 +10,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BlacklistedPerson struct {
+	ID               pgtype.UUID
+	DocumentType     string
+	DocumentNumber   string
+	FullName         *string
+	Reason           string
+	ReportedByUnitID pgtype.UUID
+	ReportedByUserID pgtype.UUID
+	ExpiresAt        pgtype.Timestamptz
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+	Version          int32
+}
+
 type Permission struct {
 	ID          pgtype.UUID
 	Namespace   string
@@ -255,4 +274,49 @@ type Vehicle struct {
 	UpdatedBy pgtype.UUID
 	DeletedBy pgtype.UUID
 	Version   int32
+}
+
+type VisitorEntry struct {
+	ID                    pgtype.UUID
+	UnitID                pgtype.UUID
+	PreRegistrationID     pgtype.UUID
+	VisitorFullName       string
+	VisitorDocumentType   *string
+	VisitorDocumentNumber string
+	PhotoUrl              *string
+	GuardID               pgtype.UUID
+	EntryTime             pgtype.Timestamptz
+	ExitTime              pgtype.Timestamptz
+	Source                string
+	Notes                 *string
+	Status                string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	DeletedAt             pgtype.Timestamptz
+	CreatedBy             pgtype.UUID
+	UpdatedBy             pgtype.UUID
+	DeletedBy             pgtype.UUID
+	Version               int32
+}
+
+type VisitorPreRegistration struct {
+	ID                    pgtype.UUID
+	UnitID                pgtype.UUID
+	CreatedByUserID       pgtype.UUID
+	VisitorFullName       string
+	VisitorDocumentType   *string
+	VisitorDocumentNumber *string
+	ExpectedAt            pgtype.Timestamptz
+	ExpiresAt             pgtype.Timestamptz
+	MaxUses               int32
+	UsesCount             int32
+	QrCodeHash            string
+	Status                string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	DeletedAt             pgtype.Timestamptz
+	CreatedBy             pgtype.UUID
+	UpdatedBy             pgtype.UUID
+	DeletedBy             pgtype.UUID
+	Version               int32
 }

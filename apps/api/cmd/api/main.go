@@ -29,6 +29,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saas-ph/api/internal/handlers"
+	accesspersistence "github.com/saas-ph/api/internal/modules/access_control/infrastructure/persistence"
+	accesshttp "github.com/saas-ph/api/internal/modules/access_control/interfaces/http"
 	authzpersistence "github.com/saas-ph/api/internal/modules/authorization/infrastructure/persistence"
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
@@ -228,6 +230,15 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				VehicleRepo:    peoplepersistence.NewVehicleRepository(),
 				AssignmentRepo: peoplepersistence.NewAssignmentRepository(),
 				Now:            time.Now,
+			})
+
+			// Modulo access_control (porteria/visitas).
+			accesshttp.Mount(tr, accesshttp.Dependencies{
+				Logger:        logger,
+				BlacklistRepo: accesspersistence.NewBlacklistRepository(),
+				PreRegRepo:    accesspersistence.NewPreRegistrationRepository(),
+				EntryRepo:     accesspersistence.NewVisitorEntryRepository(),
+				Now:           time.Now,
 			})
 		})
 	}

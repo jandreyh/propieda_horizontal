@@ -1,0 +1,389 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Access Control API
+  description: |
+    Modulo `access_control` (porteria / visitas). Expone:
+      * pre-registros de visitantes con QR firmado (residente),
+      * checkin de visitantes (por QR o manual) en porteria,
+      * checkout (cierre de la entrada),
+      * dashboard de visitas activas,
+      * blacklist de personas vetadas.
+
+    Multi-tenant por subdominio / header `X-Tenant-Slug`; el tenant es
+    implicito en la base.
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: pre-registrations
+    description: Pre-registros (QR) creados por residentes.
+  - name: visits
+    description: Checkin/checkout de visitantes en porteria.
+  - name: blacklist
+    description: Personas vetadas en porteria.
+
+paths:
+  /visitor-preregistrations:
+    post:
+      tags: [pre-registrations]
+      summary: Crear pre-registro de visitante (genera QR)
+      description: |
+        Requiere permiso `visit.create`. Genera un codigo QR aleatorio
+        firmado (32 bytes), lo hashea con sha256 y persiste UNICAMENTE el
+        hash. El QR plano se devuelve UNA SOLA VEZ en la respuesta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePreRegistrationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePreRegistrationResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /visits/checkin-by-qr:
+    post:
+      tags: [visits]
+      summary: Checkin por QR (guard)
+      description: |
+        Requiere permiso `visit.create`. Hashea el QR plano y lo redime
+        atomicamente. Si el QR esta expirado o agotado, devuelve `410 Gone`.
+        Si el documento del visitante esta en blacklist, registra una
+        entrada `rejected` por auditoria y devuelve `403 Forbidden`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckinByQRRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitorEntryResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Forbidden (blacklisted o RBAC)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '410':
+          description: Gone (QR expirado o agotado)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /visits/checkin-manual:
+    post:
+      tags: [visits]
+      summary: Checkin manual (guard)
+      description: |
+        Requiere permiso `visit.create`. `photo_url` es OBLIGATORIO en
+        este flujo. Si el documento del visitante esta en blacklist,
+        registra una entrada `rejected` por auditoria y devuelve `403`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckinManualRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitorEntryResponse'
+        '400':
+          description: Bad Request (incluye `photo_url` faltante)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Forbidden (blacklisted o RBAC)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /visits/{id}/checkout:
+    post:
+      tags: [visits]
+      summary: Cerrar visita (exit_time = now)
+      description: |
+        Requiere permiso `visit.create`. Marca la visita como cerrada y
+        registra la hora de salida.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitorEntryResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /visits/active:
+    get:
+      tags: [visits]
+      summary: Lista visitas activas (dashboard guard)
+      description: |
+        Requiere permiso `visit.read`. Lista entradas con `exit_time = NULL`
+        y `status = 'active'`, ordenadas por `entry_time` desc.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListVisitorEntriesResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /blacklist:
+    post:
+      tags: [blacklist]
+      summary: Crear entrada de blacklist
+      description: |
+        Requiere permiso `blacklist.write`. Una entrada activa por
+        (document_type, document_number).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBlacklistRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlacklistResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Conflict (ya existe entrada activa)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    get:
+      tags: [blacklist]
+      summary: Listar blacklist activa
+      description: Requiere permiso `blacklist.read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListBlacklistResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not Found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:     { type: string }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+      required: [type, title, status]
+
+    DocumentType:
+      type: string
+      enum: [CC, CE, PA, TI, RC, NIT]
+
+    CreatePreRegistrationRequest:
+      type: object
+      required: [unit_id, visitor_full_name, expires_at]
+      properties:
+        unit_id: { type: string, format: uuid }
+        visitor_full_name: { type: string }
+        visitor_document_type:
+          $ref: '#/components/schemas/DocumentType'
+        visitor_document_number: { type: string }
+        expected_at: { type: string, format: date-time }
+        expires_at:  { type: string, format: date-time }
+        max_uses:    { type: integer, minimum: 1, default: 1 }
+
+    CreatePreRegistrationResponse:
+      type: object
+      required: [id, qr_code, expires_at, max_uses]
+      properties:
+        id:         { type: string, format: uuid }
+        qr_code:
+          type: string
+          description: |
+            Codigo QR plano. Devuelto UNA SOLA VEZ. Solo el sha256 queda
+            en la base.
+        expires_at: { type: string, format: date-time }
+        max_uses:   { type: integer }
+
+    CheckinByQRRequest:
+      type: object
+      required: [qr_code, guard_id]
+      properties:
+        qr_code:   { type: string }
+        guard_id:  { type: string, format: uuid }
+        photo_url: { type: string, format: uri }
+        notes:     { type: string }
+
+    CheckinManualRequest:
+      type: object
+      required: [visitor_full_name, visitor_document_number, photo_url, guard_id]
+      properties:
+        unit_id:
+          type: string
+          format: uuid
+          description: Unidad destino (opcional para visita anonima).
+        visitor_full_name: { type: string }
+        visitor_document_type:
+          $ref: '#/components/schemas/DocumentType'
+        visitor_document_number: { type: string }
+        photo_url:
+          type: string
+          format: uri
+          description: OBLIGATORIO en checkin manual.
+        guard_id: { type: string, format: uuid }
+        notes:    { type: string }
+
+    VisitorEntryResponse:
+      type: object
+      required:
+        - id
+        - visitor_full_name
+        - visitor_document_number
+        - guard_id
+        - entry_time
+        - source
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:                       { type: string, format: uuid }
+        unit_id:                  { type: string, format: uuid, nullable: true }
+        pre_registration_id:      { type: string, format: uuid, nullable: true }
+        visitor_full_name:        { type: string }
+        visitor_document_type:    { $ref: '#/components/schemas/DocumentType' }
+        visitor_document_number:  { type: string }
+        photo_url:                { type: string, format: uri, nullable: true }
+        guard_id:                 { type: string, format: uuid }
+        entry_time:               { type: string, format: date-time }
+        exit_time:                { type: string, format: date-time, nullable: true }
+        source:                   { type: string, enum: [qr, manual] }
+        notes:                    { type: string, nullable: true }
+        status:                   { type: string, enum: [active, closed, rejected] }
+        created_at:               { type: string, format: date-time }
+        updated_at:               { type: string, format: date-time }
+        version:                  { type: integer }
+
+    ListVisitorEntriesResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VisitorEntryResponse' }
+        total: { type: integer }
+
+    CreateBlacklistRequest:
+      type: object
+      required: [document_type, document_number, reason]
+      properties:
+        document_type:   { $ref: '#/components/schemas/DocumentType' }
+        document_number: { type: string }
+        full_name:       { type: string }
+        reason:          { type: string }
+        reported_by_unit_id: { type: string, format: uuid }
+        expires_at:      { type: string, format: date-time }
+
+    BlacklistResponse:
+      type: object
+      required:
+        - id
+        - document_type
+        - document_number
+        - reason
+        - status
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id:                    { type: string, format: uuid }
+        document_type:         { $ref: '#/components/schemas/DocumentType' }
+        document_number:       { type: string }
+        full_name:             { type: string, nullable: true }
+        reason:                { type: string }
+        reported_by_unit_id:   { type: string, format: uuid, nullable: true }
+        reported_by_user_id:   { type: string, format: uuid, nullable: true }
+        expires_at:            { type: string, format: date-time, nullable: true }
+        status:                { type: string, enum: [active, archived] }
+        created_at:            { type: string, format: date-time }
+        updated_at:            { type: string, format: date-time }
+        version:               { type: integer }
+
+    ListBlacklistResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BlacklistResponse' }
+        total: { type: integer }
