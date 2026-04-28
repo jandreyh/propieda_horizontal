@@ -133,9 +133,16 @@ Modulos MVP entregados:
 - Hardening: `audit_logs` append-only con trigger, indices criticos,
   runbook operativo en `docs/runbook.md`.
 
-Runtime contra Postgres 18 esta en construccion: el codigo y las
-migraciones estan listos. La verificacion end-to-end con Docker se hace
-en piloto (ver runbook).
+Frontends scaffolded:
+- `apps/web` — Next.js 16.2.4 (App Router, TypeScript, Tailwind).
+  Paginas placeholder: `/login`, `/dashboard`. Build y lint limpios.
+- `apps/mobile` — Expo SDK 55 (RN 0.83.9, TypeScript). Template
+  blank-typescript. TypeScript check limpio.
+
+Runtime contra Postgres 18: backend Go compila y tests unitarios pasan
+(26 paquetes). La verificacion end-to-end con Docker Compose (migraciones,
+smoke test, integracion) queda pendiente de ejecutar con Docker engine
+activo (ver runbook).
 
 ## Decisiones arquitectonicas (ADRs)
 
