@@ -1,0 +1,218 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Residential Structure API
+  description: |
+    Modulo `residential_structure`. Modela el arbol opcional de torres,
+    bloques, etapas y secciones del conjunto residencial. Las unidades
+    habitacionales (apartamentos) viven en otro modulo.
+    Multi-tenant por subdominio / header `X-Tenant-Slug`; el tenant es
+    implicito en la base.
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: structures
+    description: Estructuras residenciales (torres, bloques, etapas, secciones).
+
+paths:
+  /structures:
+    get:
+      tags: [structures]
+      summary: Lista estructuras activas
+      description: Requiere permiso `structures.read`. Ordenadas por (order_index, name).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListStructuresResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [structures]
+      summary: Crea una estructura
+      description: Requiere permiso `structures.write`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStructureRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Structure' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /structures/{id}:
+    parameters:
+      - $ref: '#/components/parameters/StructureID'
+    get:
+      tags: [structures]
+      summary: Obtiene una estructura por id
+      description: Requiere permiso `structures.read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Structure' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [structures]
+      summary: Actualiza una estructura (concurrencia optimista)
+      description: |
+        Requiere permiso `structures.write`. El cliente debe enviar el
+        `expected_version` (leido del GET previo). Si no coincide, el
+        servidor responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStructureRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Structure' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [structures]
+      summary: Soft-delete (archiva) una estructura
+      description: Requiere permiso `structures.write`. Marca status=archived.
+      responses:
+        '204': { description: Archived }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  parameters:
+    StructureID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Structure:
+      type: object
+      required: [id, name, type, order_index, status, created_at, updated_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 200 }
+        type:
+          type: string
+          enum: [tower, block, stage, section, other]
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        description: { type: string, nullable: true }
+        order_index: { type: integer, format: int32 }
+        status:
+          type: string
+          enum: [active, archived]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer, format: int32 }
+
+    CreateStructureRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, maxLength: 200 }
+        type:
+          type: string
+          enum: [tower, block, stage, section, other]
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        description: { type: string }
+        order_index: { type: integer, format: int32, default: 0 }
+
+    UpdateStructureRequest:
+      type: object
+      required: [name, type, expected_version]
+      properties:
+        name: { type: string, maxLength: 200 }
+        type:
+          type: string
+          enum: [tower, block, stage, section, other]
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        description: { type: string }
+        order_index: { type: integer, format: int32, default: 0 }
+        expected_version:
+          type: integer
+          format: int32
+          minimum: 1
+
+    ListStructuresResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Structure' }
+        total: { type: integer }
+
+    Problem:
+      description: RFC 7807 Problem Details object.
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Auth required.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Permiso insuficiente.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Recurso inexistente o archivado.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Concurrencia optimista (version mismatch).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

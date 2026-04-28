@@ -1,0 +1,453 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Units API
+  version: "1.0.0"
+  description: |
+    Endpoints del modulo `units` (unidades, propietarios, ocupantes) del
+    SaaS multi-tenant de Propiedad Horizontal. Todos los endpoints
+    operan en el contexto de un tenant resuelto por subdominio o por el
+    header `X-Tenant-Slug`.
+
+    Errores: todos los responses de error usan `application/problem+json`
+    siguiendo RFC 7807.
+
+servers:
+  - url: https://{tenant}.{baseDomain}
+    description: Tenant resuelto por subdominio.
+    variables:
+      tenant:
+        default: demo
+      baseDomain:
+        default: ph.local
+
+tags:
+  - name: units
+    description: Unidades operativas del conjunto.
+  - name: owners
+    description: Propietarios historicos por unidad.
+  - name: occupants
+    description: Ocupantes activos / historicos.
+  - name: people
+    description: Personas vinculadas a la unidad (CRITICO DoD).
+
+paths:
+  /units:
+    post:
+      tags: [units]
+      summary: Crea una unidad
+      operationId: unitsCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUnitRequest'
+      responses:
+        '201':
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags: [units]
+      summary: Lista unidades activas
+      operationId: unitsList
+      parameters:
+        - in: query
+          name: structure_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListUnitsResponse'
+
+  /units/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+    get:
+      tags: [units]
+      summary: Obtiene una unidad por id
+      operationId: unitsGet
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /units/{id}/people:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+    get:
+      tags: [people]
+      summary: Personas activas en la unidad (owners + occupants)
+      description: |
+        Endpoint CRITICO DoD. Devuelve en un solo round-trip los
+        propietarios activos (sin until_date) y los ocupantes activos
+        (sin move_out_date) asociados a la unidad. is_primary marca al
+        residente principal cuando aplica.
+      operationId: unitsPeople
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeopleInUnitResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /units/{id}/owners:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+    post:
+      tags: [owners]
+      summary: Registra un propietario en la unidad
+      operationId: unitsAddOwner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddOwnerRequest'
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /units/{id}/owners/{ownerID}:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+      - in: path
+        name: ownerID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [owners]
+      summary: Cierra una fila de propiedad (set until_date=today)
+      operationId: unitsTerminateOwner
+      responses:
+        '204':
+          description: Sin contenido
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /units/{id}/occupants:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+    post:
+      tags: [occupants]
+      summary: Registra un ocupante en la unidad
+      operationId: unitsAddOccupant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddOccupantRequest'
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Occupant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /units/{id}/occupants/{occupancyID}:
+    parameters:
+      - $ref: '#/components/parameters/UnitID'
+      - in: path
+        name: occupancyID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [occupants]
+      summary: Cierra una ocupacion (set move_out_date=today)
+      operationId: unitsMoveOutOccupant
+      responses:
+        '204':
+          description: Sin contenido
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    UnitID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Solicitud invalida
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: No encontrado
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflicto
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+    CreateUnitRequest:
+      type: object
+      required: [code, type]
+      properties:
+        structure_id:
+          type: string
+          format: uuid
+          nullable: true
+        code:
+          type: string
+          example: "A-204"
+        type:
+          type: string
+          enum: [apartment, house, commercial, office, parking, storage, other]
+        area_m2:
+          type: number
+          format: float
+          minimum: 0
+        bedrooms:
+          type: integer
+          minimum: 0
+        coefficient:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    Unit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        structure_id:
+          type: string
+          format: uuid
+          nullable: true
+        code:
+          type: string
+        type:
+          type: string
+        area_m2:
+          type: number
+          format: float
+          nullable: true
+        bedrooms:
+          type: integer
+          nullable: true
+        coefficient:
+          type: number
+          format: float
+          nullable: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+
+    ListUnitsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Unit'
+
+    AddOwnerRequest:
+      type: object
+      required: [user_id, percentage]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: float
+          exclusiveMinimum: 0
+          maximum: 100
+        since_date:
+          type: string
+          format: date
+          nullable: true
+
+    Owner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        unit_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: float
+        since_date:
+          type: string
+          format: date
+        until_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+
+    AddOccupantRequest:
+      type: object
+      required: [user_id, role_in_unit]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role_in_unit:
+          type: string
+          enum: [owner_resident, tenant, authorized, family, staff]
+        is_primary:
+          type: boolean
+          default: false
+        move_in_date:
+          type: string
+          format: date
+          nullable: true
+
+    Occupant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        unit_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role_in_unit:
+          type: string
+        is_primary:
+          type: boolean
+        move_in_date:
+          type: string
+          format: date
+        move_out_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+
+    PersonInUnit:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        document:
+          type: string
+          example: "CC:1234567"
+        role_in_unit:
+          type: string
+          example: "owner"
+        is_primary:
+          type: boolean
+        since_date:
+          type: string
+          format: date
+
+    PeopleInUnitResponse:
+      type: object
+      properties:
+        unit_id:
+          type: string
+          format: uuid
+        people:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonInUnit'

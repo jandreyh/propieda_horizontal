@@ -33,8 +33,14 @@ import (
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
 	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
+	peoplepersistence "github.com/saas-ph/api/internal/modules/people/infrastructure/persistence"
+	peoplehttp "github.com/saas-ph/api/internal/modules/people/interfaces/http"
+	rspersistence "github.com/saas-ph/api/internal/modules/residential_structure/infrastructure/persistence"
+	rshttp "github.com/saas-ph/api/internal/modules/residential_structure/interfaces/http"
 	tcpersistence "github.com/saas-ph/api/internal/modules/tenant_config/infrastructure/persistence"
 	tchttp "github.com/saas-ph/api/internal/modules/tenant_config/interfaces/http"
+	unitspersistence "github.com/saas-ph/api/internal/modules/units/infrastructure/persistence"
+	unitshttp "github.com/saas-ph/api/internal/modules/units/interfaces/http"
 	"github.com/saas-ph/api/internal/platform/config"
 	"github.com/saas-ph/api/internal/platform/db"
 	"github.com/saas-ph/api/internal/platform/jwtsign"
@@ -197,6 +203,31 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				SettingsRepo: tcpersistence.NewSettingsRepository(),
 				BrandingRepo: tcpersistence.NewBrandingRepository(),
 				Now:          time.Now,
+			})
+
+			// Modulo residential_structure.
+			rshttp.Mount(tr, rshttp.Dependencies{
+				Logger:        logger,
+				StructureRepo: rspersistence.NewStructureRepository(),
+				Now:           time.Now,
+			})
+
+			// Modulo units.
+			unitshttp.Mount(tr, unitshttp.Dependencies{
+				Logger:        logger,
+				UnitRepo:      unitspersistence.NewUnitRepo(),
+				OwnerRepo:     unitspersistence.NewOwnerRepo(),
+				OccupancyRepo: unitspersistence.NewOccupancyRepo(),
+				PeopleRepo:    unitspersistence.NewPeopleByUnitRepo(),
+				Now:           time.Now,
+			})
+
+			// Modulo people (vehiculos).
+			peoplehttp.Mount(tr, peoplehttp.Dependencies{
+				Logger:         logger,
+				VehicleRepo:    peoplepersistence.NewVehicleRepository(),
+				AssignmentRepo: peoplepersistence.NewAssignmentRepository(),
+				Now:            time.Now,
 			})
 		})
 	}

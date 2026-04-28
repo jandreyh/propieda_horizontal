@@ -23,6 +23,23 @@ type Permission struct {
 	DeletedBy   pgtype.UUID
 }
 
+type ResidentialStructure struct {
+	ID          pgtype.UUID
+	Name        string
+	Type        string
+	ParentID    pgtype.UUID
+	Description *string
+	OrderIndex  int32
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
 type Role struct {
 	ID          pgtype.UUID
 	Name        string
@@ -77,6 +94,75 @@ type TenantSetting struct {
 	UpdatedBy   pgtype.UUID
 	DeletedBy   pgtype.UUID
 	Version     int32
+}
+
+type Unit struct {
+	ID          pgtype.UUID
+	StructureID pgtype.UUID
+	Code        string
+	Type        string
+	AreaM2      pgtype.Numeric
+	Bedrooms    *int32
+	Coefficient pgtype.Numeric
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type UnitOccupancy struct {
+	ID          pgtype.UUID
+	UnitID      pgtype.UUID
+	UserID      pgtype.UUID
+	RoleInUnit  string
+	IsPrimary   bool
+	MoveInDate  pgtype.Date
+	MoveOutDate pgtype.Date
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type UnitOwner struct {
+	ID         pgtype.UUID
+	UnitID     pgtype.UUID
+	UserID     pgtype.UUID
+	Percentage pgtype.Numeric
+	SinceDate  pgtype.Date
+	UntilDate  pgtype.Date
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	UpdatedBy  pgtype.UUID
+	DeletedBy  pgtype.UUID
+	Version    int32
+}
+
+type UnitVehicleAssignment struct {
+	ID        pgtype.UUID
+	UnitID    pgtype.UUID
+	VehicleID pgtype.UUID
+	SinceDate pgtype.Date
+	UntilDate pgtype.Date
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
 }
 
 type User struct {
@@ -151,4 +237,22 @@ type UserSession struct {
 	CreatedBy        pgtype.UUID
 	UpdatedBy        pgtype.UUID
 	Version          int32
+}
+
+type Vehicle struct {
+	ID        pgtype.UUID
+	Plate     string
+	Type      string
+	Brand     *string
+	Model     *string
+	Color     *string
+	Year      *int32
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
 }

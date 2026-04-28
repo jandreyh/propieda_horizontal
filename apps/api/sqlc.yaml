@@ -41,3 +41,39 @@ sql:
         emit_empty_slices: true
         emit_exact_table_names: false
         emit_pointers_for_null_types: true
+  - name: residential_structure
+    engine: postgresql
+    queries: internal/modules/residential_structure/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: residentialdb
+        out: internal/modules/residential_structure/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+  - name: units
+    engine: postgresql
+    queries: internal/modules/units/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: unitsdb
+        out: internal/modules/units/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+  - name: people
+    engine: postgresql
+    queries: internal/modules/people/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: peopledb
+        out: internal/modules/people/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
