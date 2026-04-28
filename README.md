@@ -111,12 +111,31 @@ lefthook install
 
 ## Roadmap de fases
 
-| Bloque | Fases | Comando |
-|--------|-------|---------|
-| MVP | 0-7 | `/fase N` |
-| POST-MVP | 8-15 | `/descubrir N` -> spec frozen -> `/fase N` |
+| Bloque | Fases | Comando | Estado |
+|--------|-------|---------|--------|
+| MVP | 0-7 | `/fase N` | Completas (0,1,2,3,4,5,6,7) |
+| POST-MVP | 8-15 | `/descubrir N` -> spec frozen -> `/fase N` | Pendientes |
 
-Estado actual: ver [`docs/specs/`](docs/specs/) y commits con prefijo `fase-N`.
+Modulos MVP entregados:
+- Plataforma: chi server + middlewares (request_id, logging, recovery,
+  rate_limit, tenant_resolver), pgxpool central + Registry por tenant
+  con single-flight, RFC 7807, golang-migrate.
+- `identity` — login + MFA TOTP + refresh con rotacion + /me.
+- `authorization` — RBAC con namespaces + scopes + RequirePermission.
+- `tenant_config` — settings (key/JSONB) y branding singleton.
+- `residential_structure` — torres/bloques/etapas en jerarquia.
+- `units` — unidades + owners + ocupantes + endpoint critico
+  `GET /units/{id}/people`.
+- `people` — vehiculos + asignaciones a unidades.
+- `access_control` — porteria con QR pre-registro, blacklist, manual.
+- `packages` — paqueteria con bloqueo optimista + idempotency + outbox.
+- `announcements` — tablero con audiencias y feed filtrado.
+- Hardening: `audit_logs` append-only con trigger, indices criticos,
+  runbook operativo en `docs/runbook.md`.
+
+Runtime contra Postgres 18 esta en construccion: el codigo y las
+migraciones estan listos. La verificacion end-to-end con Docker se hace
+en piloto (ver runbook).
 
 ## Decisiones arquitectonicas (ADRs)
 
