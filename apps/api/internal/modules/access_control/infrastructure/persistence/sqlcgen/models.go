@@ -10,6 +10,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Announcement struct {
+	ID                pgtype.UUID
+	Title             string
+	Body              string
+	PublishedByUserID pgtype.UUID
+	PublishedAt       pgtype.Timestamptz
+	Pinned            bool
+	ExpiresAt         pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type AnnouncementAcknowledgment struct {
+	ID             pgtype.UUID
+	AnnouncementID pgtype.UUID
+	UserID         pgtype.UUID
+	AcknowledgedAt pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+}
+
+type AnnouncementAudience struct {
+	ID             pgtype.UUID
+	AnnouncementID pgtype.UUID
+	TargetType     string
+	TargetID       pgtype.UUID
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+	DeletedBy      pgtype.UUID
+}
+
 type BlacklistedPerson struct {
 	ID               pgtype.UUID
 	DocumentType     string

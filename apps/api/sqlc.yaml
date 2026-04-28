@@ -101,3 +101,15 @@ sql:
         emit_interface: true
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+  - name: announcements
+    engine: postgresql
+    queries: internal/modules/announcements/infrastructure/persistence/queries
+    schema: ../../migrations/tenant
+    gen:
+      go:
+        package: announcementsdb
+        out: internal/modules/announcements/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true

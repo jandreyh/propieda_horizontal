@@ -31,6 +31,8 @@ import (
 	"github.com/saas-ph/api/internal/handlers"
 	accesspersistence "github.com/saas-ph/api/internal/modules/access_control/infrastructure/persistence"
 	accesshttp "github.com/saas-ph/api/internal/modules/access_control/interfaces/http"
+	annpersistence "github.com/saas-ph/api/internal/modules/announcements/infrastructure/persistence"
+	annhttp "github.com/saas-ph/api/internal/modules/announcements/interfaces/http"
 	authzpersistence "github.com/saas-ph/api/internal/modules/authorization/infrastructure/persistence"
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
@@ -254,6 +256,16 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				TxRunner:    pkgpersistence.NewTenantTxRunner(),
 				Idempotency: pkgusecases.NewIdempotencyCache(24*time.Hour, time.Now),
 				Now:         time.Now,
+			})
+
+			// Modulo announcements (tablero).
+			annhttp.Mount(tr, annhttp.Dependencies{
+				Logger:            logger,
+				AnnouncementsRepo: annpersistence.NewAnnouncementRepository(),
+				AudiencesRepo:     annpersistence.NewAudienceRepository(),
+				AcksRepo:          annpersistence.NewAckRepository(),
+				TxRunner:          annpersistence.NewTenantTxRunner(),
+				Now:               time.Now,
 			})
 		})
 	}

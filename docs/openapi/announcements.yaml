@@ -1,0 +1,228 @@
+openapi: 3.0.3
+info:
+  title: SaaS PH — Announcements API
+  description: |
+    Modulo `announcements` (tablero de anuncios). Expone:
+      * publicacion de anuncios por administradores/staff,
+      * feed personalizado por usuario (segmentado por rol/estructura/unidad),
+      * acknowledgments (lectura confirmada),
+      * archivado (soft-delete).
+
+    Multi-tenant por subdominio / header `X-Tenant-Slug`; el tenant es
+    implicito en la base.
+  version: "1.0.0"
+
+servers:
+  - url: https://{slug}.dominio.com/api/v1
+    variables:
+      slug:
+        default: conjunto
+        description: Subdominio del conjunto.
+
+tags:
+  - name: announcements
+    description: Anuncios publicados en el tablero.
+
+paths:
+  /announcements:
+    post:
+      tags: [announcements]
+      summary: Publicar un anuncio
+      description: |
+        Requiere permiso `announcement.publish`. Crea el anuncio y sus
+        audiencias en una sola transaccion.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnnouncementRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /announcements/feed:
+    get:
+      tags: [announcements]
+      summary: Feed de anuncios visibles para el usuario
+      description: |
+        Requiere permiso `announcement.read`. Devuelve los anuncios
+        publicados, no expirados y cuya audiencia matchee con los scopes
+        del usuario (rol/estructura/unidad). El user_id se resuelve del
+        contexto (header `X-User-ID` en MVP). En MVP, los scopes se
+        envian vacios desde el handler (TODO: resolverlos del modulo
+        authorization + units), por lo que la consulta solo retorna
+        anuncios con audience='global'.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /announcements/{id}:
+    get:
+      tags: [announcements]
+      summary: Obtener un anuncio
+      description: |
+        Requiere permiso `announcement.read`. Devuelve el anuncio
+        completo + sus audiencias activas.
+      parameters:
+        - $ref: '#/components/parameters/AnnouncementID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [announcements]
+      summary: Archivar un anuncio (soft-delete)
+      description: Requiere permiso `announcement.delete`.
+      parameters:
+        - $ref: '#/components/parameters/AnnouncementID'
+      responses:
+        '204':
+          description: No Content
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /announcements/{id}/ack:
+    post:
+      tags: [announcements]
+      summary: Confirmar lectura del anuncio
+      description: |
+        Requiere permiso `announcement.read`. Idempotente: insertar la
+        misma combinacion (announcement_id, user_id) varias veces NO
+        falla y NO duplica el ack.
+      parameters:
+        - $ref: '#/components/parameters/AnnouncementID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  parameters:
+    AnnouncementID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    CreateAnnouncementRequest:
+      type: object
+      required: [title, body, audiences]
+      properties:
+        title:                 { type: string, minLength: 1 }
+        body:                  { type: string, minLength: 1 }
+        published_by_user_id:  { type: string, format: uuid }
+        pinned:                { type: boolean, default: false }
+        expires_at:            { type: string, format: date-time, nullable: true }
+        audiences:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AudienceTarget'
+
+    AudienceTarget:
+      type: object
+      required: [target_type]
+      properties:
+        target_type:
+          type: string
+          enum: [global, structure, role, unit]
+        target_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Obligatorio salvo cuando target_type='global'.
+
+    AnnouncementResponse:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        title:        { type: string }
+        body:         { type: string }
+        published_by: { type: string, format: uuid }
+        published_at: { type: string, format: date-time }
+        pinned:       { type: boolean }
+        expires_at:   { type: string, format: date-time, nullable: true }
+        status:       { type: string, enum: [published, archived] }
+        audiences:
+          type: array
+          items: { $ref: '#/components/schemas/AudienceTarget' }
+        created_at:   { type: string, format: date-time }
+        updated_at:   { type: string, format: date-time }
+        version:      { type: integer }
+
+    FeedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AnnouncementResponse' }
+        total: { type: integer }
+
+    AckResponse:
+      type: object
+      properties:
+        id:               { type: string, format: uuid }
+        announcement_id:  { type: string, format: uuid }
+        user_id:          { type: string, format: uuid }
+        acknowledged_at:  { type: string, format: date-time }
+
+    Problem:
+      type: object
+      properties:
+        type:     { type: string }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not Found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
