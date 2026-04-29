@@ -40,6 +40,17 @@ esperadas concretas, y verificaciones automatizables.
 | 14 | PQRS | Si | 3-4 dias |
 | 15 | Notificaciones multicanal (WhatsApp, SMS, Push, Email) | Si | 3-4 dias |
 
+### Re-arquitectura de identidad (Fase 16) — bloqueante para escala real
+| Fase | Nombre | Discovery? | Duracion estimada |
+|------|--------|-----------|-------------------|
+| 16 | Identidad cross-tenant + provisioning + selector de conjunto | **Spec frozen** | 7-10 dias |
+
+> **CRITICO**: la Fase 16 reemplaza partes del ADR 0002 con el ADR 0007. Es
+> requisito para vender a empresas administradoras y para que personal operativo
+> rote entre conjuntos. Spec autocontenida en
+> [docs/specs/fase-16-cross-tenant-identity-spec.md](docs/specs/fase-16-cross-tenant-identity-spec.md)
+> con 11 pasos ejecutables (16.0 a 16.10) resistentes a sesiones.
+
 > Para fases 8-15, ejecutar `/descubrir <N>` ANTES de `/fase <N>`. El protocolo
 > de discovery hace que Claude entreviste al usuario con rondas estructuradas
 > y consolide las respuestas en `/docs/specs/fase-<N>-spec.md` antes de codear.
@@ -1262,9 +1273,62 @@ DoD especifico:
 
 ---
 
+## FASE 16 — Identidad cross-tenant + provisioning + selector
+
+**Pre-condiciones**: Fase 7 (hardening MVP) cumplido. ADR 0007 mergeado.
+
+### Por que esta fuera del orden 8-15
+
+Las fases 8-15 son **modulos de negocio**. La Fase 16 es **re-arquitectura de
+identidad** que afecta a TODOS los modulos. Se introduce como ruptura
+controlada cuando hay evidencia de que el modelo "una identidad por tenant" del
+ADR 0002 no escala a empresas administradoras y personal que rota.
+
+### Brief autocontenido
+
+> Ejecuta la Fase 16 segun la spec frozen en
+> [docs/specs/fase-16-cross-tenant-identity-spec.md](docs/specs/fase-16-cross-tenant-identity-spec.md)
+> y el ADR base en [docs/adr/0007-cross-tenant-identity.md](docs/adr/0007-cross-tenant-identity.md).
+>
+> 11 pasos numerados 16.0 a 16.10 con DoD por paso. Cada paso es autocontenido
+> y puede ejecutarse en una sesion aislada. La spec referencia la memoria
+> persistente del proyecto en `~/.claude/projects/.../memory/` (4 archivos
+> de decisiones del usuario).
+>
+> Estrategia: 5 agentes paralelos (A-E) trabajando en archivos disjuntos:
+> - A: migraciones DB central (002-005)
+> - B: modulo `platform_identity` (login, switch-tenant, me, push-devices)
+> - C: modulo `superadmin` + `provisioning` (CreateTenant transaccional)
+> - D: middleware tenant_resolver reescrito + migraciones tenant 019-020 (FK realign)
+> - E: frontend web (`/select-tenant`, `<TenantSwitcher>`, login 3-campos)
+>
+> Mobile Flutter (paso 16.8) va despues como agente F secuencial.
+
+### Ruptura intencional
+
+- ADR 0002 queda **Superseded by 0007**.
+- Se rompe la convencion de subdominio por tenant. Pasa a URL raiz unica con
+  `current_tenant` en JWT.
+- El `cmd/seed-demo` actual se reescribe; `demo` se borra y resiembra.
+- Las tablas tenant que tenian FK a `users(id)` migran a `tenant_user_links(id)`.
+
+### DoD especifico
+
+Ver seccion 15 de la spec. Resumen:
+- ADR 0002 marcado Superseded.
+- Migraciones central 002-005 reversibles.
+- Migraciones tenant 019-020 reversibles.
+- `cmd/seed-demo` reescrito.
+- E2E Playwright login + selector + switcher verde.
+- OpenAPI 3.0 actualizado.
+- Memoria persistente referenciada desde MEMORY.md (ya hecho).
+
+---
+
 ## Cierre
 
-Al completar Fase 15, el producto es funcionalmente completo. Pasos siguientes:
+Al completar Fase 16 (y luego Fase 15 si se difirio), el producto es
+funcionalmente completo. Pasos siguientes:
 
 1. **Hardening cross-cutting** post-cada-fase: revisar performance, seguridad,
    observabilidad. Repetir el bloque de Fase 7 con foco en lo nuevo.
