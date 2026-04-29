@@ -1,0 +1,50 @@
+# =============================================================================
+# Excluye del contexto de build de Docker para que sea liviano y reproducible.
+# =============================================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Builds y artefactos
+**/node_modules
+**/.next
+**/.expo
+**/dist
+**/build
+**/coverage
+**/.cache
+**/.turbo
+apps/api/bin
+apps/api/tmp
+**/*.test
+**/*.out
+coverage.txt
+coverage.html
+
+# Logs
+*.log
+**/*.log
+
+# Volumenes locales (datos de Postgres, etc.)
+deployments/data
+
+# Env locales (jamas en imagen)
+.env
+.env.local
+.env.*.local
+
+# CI / docker artefactos
+.github/workflows/*.cache
