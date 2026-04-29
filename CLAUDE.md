@@ -42,13 +42,28 @@ gana este documento — pide aclaracion al usuario antes de proceder.
 ### Reglas multi-tenant criticas
 - **PROHIBIDO**: columna `tenant_id` en tablas operativas del Tenant DB.
   El tenant ya esta implicito porque la base entera es de ese tenant.
-- **Resolucion del tenant**: por subdominio (`conjunto.dominio.com`) en web,
-  por header en movil. Middleware de Go inyecta la conexion correcta en el
-  contexto del request via `context.WithValue`.
+- **Resolucion del tenant**: post-Fase 16 → por `current_tenant` del JWT
+  (NO por subdominio). El middleware lee el JWT y enruta al pool del tenant
+  activo. Pre-Fase 16 → por subdominio o header `X-Tenant-Slug`.
 - **Cache**: metadata del tenant cacheada para no consultar la base central
   en cada request.
-- **Login por tenant**: NO existe identidad global para residentes. Solo el
-  Superadmin tiene identidad global central.
+- **Login centralizado** (ADR 0007 supersede ADR 0002): UN solo `platform_users`
+  por persona en la DB central; cada tenant DB tiene `tenant_user_links`. El
+  JWT lleva `memberships[]` y `current_tenant`. Vinculacion de usuario a un
+  conjunto solo por `public_code` que la persona entrega al admin (NO busqueda
+  libre cross-tenant excepto por `platform_superadmin`).
+
+### Decisiones congeladas adicionales (post-Discovery 2026-04-29)
+- **Provisioning**: solo el `platform_superadmin` crea tenants. Sincrono:
+  crear DB + migrar + sembrar admin + tenant funcional en una sola llamada.
+- **Entidad `platform_administrators`**: agrupa N tenants para cobranza
+  consolidada y dashboard cross-conjunto.
+- **Bloqueos**: por tenant, no globales. Ban global solo via superadmin.
+- **Migracion del `demo` actual**: borrar y resembrar con el nuevo modelo.
+- **Push notifications**: a nivel plataforma (servicio centralizado enruta
+  notifs de N conjuntos al device del usuario).
+- Detalles completos en [ADR 0007](docs/adr/0007-cross-tenant-identity.md) y
+  [spec Fase 16](docs/specs/fase-16-cross-tenant-identity-spec.md).
 
 ---
 
