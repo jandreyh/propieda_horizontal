@@ -69,9 +69,9 @@ func Mount(r chi.Router, deps Dependencies, opts ...MountOption) {
 		ar.With(gate("parking.assign")).Post("/{id}/release", h.releaseAssignment)
 	})
 
-	r.Route("/units", func(ur chi.Router) {
-		ur.With(gate("parking.read")).Get("/{id}/parking", h.getUnitParking)
-	})
+	// Endpoint anidado bajo units — no usamos Route("/units") porque ese
+	// prefijo ya fue registrado por el modulo units. Usamos Get directo.
+	r.With(gate("parking.read")).Get("/units/{id}/parking", h.getUnitParking)
 
 	r.Route("/parking-visitor-reservations", func(vr chi.Router) {
 		vr.With(gate("parking.visitor.create")).Post("/", h.createVisitorReservation)
