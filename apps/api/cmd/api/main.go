@@ -33,17 +33,31 @@ import (
 	accesshttp "github.com/saas-ph/api/internal/modules/access_control/interfaces/http"
 	annpersistence "github.com/saas-ph/api/internal/modules/announcements/infrastructure/persistence"
 	annhttp "github.com/saas-ph/api/internal/modules/announcements/interfaces/http"
-	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
-	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
+	asmpersistence "github.com/saas-ph/api/internal/modules/assemblies/infrastructure/persistence"
+	asmhttp "github.com/saas-ph/api/internal/modules/assemblies/interfaces/http"
 	authzpersistence "github.com/saas-ph/api/internal/modules/authorization/infrastructure/persistence"
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
+	finpersistence "github.com/saas-ph/api/internal/modules/finance/infrastructure/persistence"
+	finhttp "github.com/saas-ph/api/internal/modules/finance/interfaces/http"
 	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
 	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
+	incpersistence "github.com/saas-ph/api/internal/modules/incidents/infrastructure/persistence"
+	inchttp "github.com/saas-ph/api/internal/modules/incidents/interfaces/http"
+	notifpersistence "github.com/saas-ph/api/internal/modules/notifications/infrastructure/persistence"
+	notifhttp "github.com/saas-ph/api/internal/modules/notifications/interfaces/http"
 	pkgusecases "github.com/saas-ph/api/internal/modules/packages/application/usecases"
 	pkgpersistence "github.com/saas-ph/api/internal/modules/packages/infrastructure/persistence"
 	pkghttp "github.com/saas-ph/api/internal/modules/packages/interfaces/http"
+	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
+	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
+	penpersistence "github.com/saas-ph/api/internal/modules/penalties/infrastructure/persistence"
+	penhttp "github.com/saas-ph/api/internal/modules/penalties/interfaces/http"
 	peoplepersistence "github.com/saas-ph/api/internal/modules/people/infrastructure/persistence"
 	peoplehttp "github.com/saas-ph/api/internal/modules/people/interfaces/http"
+	pqrspersistence "github.com/saas-ph/api/internal/modules/pqrs/infrastructure/persistence"
+	pqrshttp "github.com/saas-ph/api/internal/modules/pqrs/interfaces/http"
+	respersistence "github.com/saas-ph/api/internal/modules/reservations/infrastructure/persistence"
+	reshttp "github.com/saas-ph/api/internal/modules/reservations/interfaces/http"
 	rspersistence "github.com/saas-ph/api/internal/modules/residential_structure/infrastructure/persistence"
 	rshttp "github.com/saas-ph/api/internal/modules/residential_structure/interfaces/http"
 	tcpersistence "github.com/saas-ph/api/internal/modules/tenant_config/infrastructure/persistence"
@@ -282,6 +296,103 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				Outbox:       parkingpersistence.NewOutboxRepository(),
 				TxRunner:     parkingpersistence.NewTenantTxRunner(),
 				Now:          time.Now,
+			})
+
+			// Modulo finance (financiero).
+			finhttp.Mount(tr, finhttp.Dependencies{
+				Logger:          logger,
+				Accounts:        finpersistence.NewChartOfAccountsRepository(),
+				CostCenters:     finpersistence.NewCostCenterRepository(),
+				BillingAccounts: finpersistence.NewBillingAccountRepository(),
+				Charges:         finpersistence.NewChargeRepository(),
+				Payments:        finpersistence.NewPaymentRepository(),
+				Allocations:     finpersistence.NewPaymentAllocationRepository(),
+				Reversals:       finpersistence.NewPaymentReversalRepository(),
+				Closures:        finpersistence.NewPeriodClosureRepository(),
+				Webhooks:        finpersistence.NewWebhookIdempotencyRepository(),
+				Outbox:          finpersistence.NewOutboxRepository(),
+				TxRunner:        finpersistence.NewTenantTxRunner(),
+				Now:             time.Now,
+			})
+
+			// Modulo reservations (zonas comunes).
+			reshttp.Mount(tr, reshttp.Dependencies{
+				Logger:       logger,
+				CommonAreas:  respersistence.NewCommonAreaRepository(),
+				Blackouts:    respersistence.NewBlackoutRepository(),
+				Reservations: respersistence.NewReservationRepository(),
+				History:      respersistence.NewStatusHistoryRepository(),
+				Outbox:       respersistence.NewOutboxRepository(),
+				TxRunner:     respersistence.NewTenantTxRunner(),
+				Now:          time.Now,
+			})
+
+			// Modulo assemblies (asambleas).
+			asmhttp.Mount(tr, asmhttp.Dependencies{
+				Logger:      logger,
+				Assemblies:  asmpersistence.NewAssemblyRepository(),
+				Calls:       asmpersistence.NewCallRepository(),
+				Attendances: asmpersistence.NewAttendanceRepository(),
+				Proxies:     asmpersistence.NewProxyRepository(),
+				Motions:     asmpersistence.NewMotionRepository(),
+				Votes:       asmpersistence.NewVoteRepository(),
+				Evidence:    asmpersistence.NewVoteEvidenceRepository(),
+				Acts:        asmpersistence.NewActRepository(),
+				Signatures:  asmpersistence.NewActSignatureRepository(),
+				Outbox:      asmpersistence.NewOutboxRepository(),
+				TxRunner:    asmpersistence.NewTenantTxRunner(),
+				Now:         time.Now,
+				MaxProxies:  1,
+			})
+
+			// Modulo incidents (incidentes).
+			inchttp.Mount(tr, inchttp.Dependencies{
+				Logger:      logger,
+				Incidents:   incpersistence.NewIncidentRepository(),
+				Attachments: incpersistence.NewAttachmentRepository(),
+				History:     incpersistence.NewStatusHistoryRepository(),
+				Assignments: incpersistence.NewIncidentAssignmentRepository(),
+				Outbox:      incpersistence.NewOutboxRepository(),
+				TxRunner:    incpersistence.NewTenantTxRunner(),
+				Now:         time.Now,
+			})
+
+			// Modulo penalties (multas/sanciones).
+			penhttp.Mount(tr, penhttp.Dependencies{
+				Logger:    logger,
+				Catalog:   penpersistence.NewCatalogRepository(),
+				Penalties: penpersistence.NewPenaltyRepository(),
+				Appeals:   penpersistence.NewAppealRepository(),
+				History:   penpersistence.NewStatusHistoryRepository(),
+				Outbox:    penpersistence.NewOutboxRepository(),
+				TxRunner:  penpersistence.NewTenantTxRunner(),
+				Now:       time.Now,
+			})
+
+			// Modulo pqrs (peticiones/quejas/reclamos).
+			pqrshttp.Mount(tr, pqrshttp.Dependencies{
+				Logger:     logger,
+				Categories: pqrspersistence.NewCategoryRepository(),
+				Tickets:    pqrspersistence.NewTicketRepository(),
+				Responses:  pqrspersistence.NewResponseRepository(),
+				History:    pqrspersistence.NewStatusHistoryRepository(),
+				Outbox:     pqrspersistence.NewOutboxRepository(),
+				TxRunner:   pqrspersistence.NewTenantTxRunner(),
+				Now:        time.Now,
+			})
+
+			// Modulo notifications (multicanal).
+			notifhttp.Mount(tr, notifhttp.Dependencies{
+				Logger:          logger,
+				Templates:       notifpersistence.NewTemplateRepository(),
+				Preferences:     notifpersistence.NewPreferenceRepository(),
+				Consents:        notifpersistence.NewConsentRepository(),
+				PushTokens:      notifpersistence.NewPushTokenRepository(),
+				ProviderConfigs: notifpersistence.NewProviderConfigRepository(),
+				Outbox:          notifpersistence.NewOutboxRepository(),
+				Deliveries:      notifpersistence.NewDeliveryRepository(),
+				TxRunner:        notifpersistence.NewTenantTxRunner(),
+				Now:             time.Now,
 			})
 		})
 	}
