@@ -61,15 +61,21 @@ go install github.com/evilmartians/lefthook@latest
 
 ### 2. Levantar Postgres (Control Plane + tenant template)
 
+Hay dos composes equivalentes:
+
+- `deployments/docker-compose.local.yml` — solo los dos Postgres (host pelado).
+- `deployments/docker-compose.dev.yml` — Postgres + devcontainer Linux con todo el tooling (Go, Node, sqlc, migrate, lefthook, Claude Code). Usar solo si quieres trabajar dentro del container; en host directo basta levantar los dos servicios pg-*.
+
 ```bash
-docker compose -f deployments/docker-compose.local.yml up -d
-docker compose -f deployments/docker-compose.local.yml ps   # ambos UP
+docker compose -f deployments/docker-compose.dev.yml up -d pg-central pg-tenant-template
 ```
 
 Conexiones por defecto:
 
 - **Control Plane**: `postgres://ph:ph@localhost:5432/ph_central`
 - **Tenant template**: `postgres://ph:ph@localhost:5433/ph_tenant_template`
+
+> **Nota**: si los puertos 5432/5433 ya estan ocupados por otros Postgres en tu Docker, Compose reasigna automaticamente (ej. 5434/5435). Revisa con `docker port ph-pg-central` y `docker port ph-pg-tenant-template` y ajusta las URLs abajo.
 
 ### 3. Aplicar migraciones
 
@@ -79,6 +85,11 @@ migrate -path migrations/central -database "postgres://ph:ph@localhost:5432/ph_c
 
 # Tenant template (para clonarse al provisionar tenants reales)
 migrate -path migrations/tenant -database "postgres://ph:ph@localhost:5433/ph_tenant_template?sslmode=disable" up
+
+# Seed de roles y permisos (no se aplica con `migrate up` porque su nombre
+# no es secuencial; se carga manualmente, idempotente):
+docker exec -i ph-pg-tenant-template psql -U ph -d ph_tenant_template \
+  < migrations/tenant/seed_001_roles_permissions.up.sql
 ```
 
 ### 4. Ejecutar API
@@ -86,8 +97,21 @@ migrate -path migrations/tenant -database "postgres://ph:ph@localhost:5433/ph_te
 ```bash
 cd apps/api
 go build ./...
-go test ./...
-go run ./cmd/api    # Disponible despues de Fase 1
+go test ./... -count=1 -short
+
+# Las variables de entorno reales que lee config.go:
+DB_CENTRAL_URL="postgres://ph:ph@localhost:5432/ph_central?sslmode=disable" \
+DB_TENANT_TEMPLATE_URL="postgres://ph:ph@localhost:5433/ph_tenant_template?sslmode=disable" \
+HTTP_ADDR=":8080" \
+LOG_FORMAT=json \
+go run ./cmd/api
+```
+
+Smoke endpoints (con la API corriendo):
+
+```bash
+curl -fsS http://localhost:8080/health   # {"status":"ok",...}
+curl -fsS http://localhost:8080/ready    # {"status":"ready"}
 ```
 
 ### 5. Hooks de pre-commit
@@ -109,6 +133,30 @@ lefthook install
   `tenant_id` como columna en Tenant DB; se incluye en logs por contexto).
 - Commits con prefijo `fase-N: <resumen>` (validado por lefthook).
 
+## Estado del runtime (verificado 2026-04-29)
+
+| Componente | Estado | Comando de verificacion |
+|-----------|--------|------------------------|
+| Build backend | ✓ limpio | `go build ./...` en `apps/api` |
+| Tests unitarios | ✓ 26 paquetes verdes | `go test ./... -count=1 -short` |
+| Tests con tag `integration` | ⚠ no hay archivos exclusivos aun | `go test ./... -tags=integration` corre los mismos unitarios |
+| Postgres central | ✓ healthy | `docker exec ph-pg-central pg_isready -U ph -d ph_central` |
+| Postgres tenant template | ✓ healthy | `docker exec ph-pg-tenant-template pg_isready -U ph -d ph_tenant_template` |
+| Migraciones central | ✓ version 1 | `migrate -path migrations/central -database $URL version` |
+| Migraciones tenant | ✓ version 18 | `migrate -path migrations/tenant -database $URL version` |
+| Seed roles/permissions | ✓ 9 roles, 26 permissions | aplicar `seed_001_roles_permissions.up.sql` con `psql` |
+| Reversibilidad tenant (down/up) | ✓ smoke OK | `migrate down 1 && migrate up` |
+| API `/health` | ✓ 200 OK | `curl http://localhost:8080/health` |
+| API `/ready` | ✓ 200 OK | `curl http://localhost:8080/ready` |
+| `apps/web` build | ✓ 17 rutas estaticas | `pnpm --filter web build` |
+| `apps/web` lint | ✓ limpio | `pnpm --filter web lint` |
+| `apps/mobile` typecheck | ✓ limpio | `pnpm --filter mobile exec tsc --noEmit` |
+
+Caveats abiertos (no bloqueantes):
+
+- No existen tests con `//go:build integration` ni uso de Testcontainers todavia. Suite actual es enteramente unitaria con stubs/mocks.
+- `seed_001_roles_permissions.up.sql` no es secuencial -> se aplica manualmente (ver bloque 3 arriba). Diseño intencional para ser idempotente con `ON CONFLICT DO NOTHING`.
+
 ## Roadmap de fases
 
 | Bloque | Fases | Comando | Estado |
@@ -116,6 +164,7 @@ lefthook install
 | MVP | 0-7 | `/fase N` | Completas |
 | POST-MVP | 8-15 | `/descubrir N` -> spec -> `/fase N` | Completas |
 | Frontends | web + mobile | scaffold | Scaffold listo |
+| Runtime end-to-end | docker + migraciones + smoke | verificado 2026-04-29 | ✓ |
 
 ### Modulos MVP (fases 0-7)
 - Plataforma: chi server + middlewares (request_id, logging, recovery,

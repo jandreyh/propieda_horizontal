@@ -36,3 +36,7 @@ node_modules/
 
 # Docker volumes
 deployments/data/
+
+# Claude Code session artifacts
+.claude/scheduled_tasks.lock
+.claude/local_*
