@@ -32,8 +32,28 @@ export const listVehicles = () => apiGet<ListVehiclesResponse>("/vehicles");
 export const createVehicle = (body: CreateVehicleRequest) =>
   apiPost<Vehicle>("/vehicles", body);
 
-export const listPackages = (params?: { unit_id?: string; status?: string }) =>
-  apiGet<ListPackagesResponse>("/packages", params);
+export async function listPackages(params?: {
+  unit_id?: string;
+  status?: string;
+}): Promise<ListPackagesResponse> {
+  // El backend requiere unit_id o status. Cuando no viene ninguno
+  // pedimos los 3 estados y agregamos client-side.
+  if (params?.unit_id || params?.status) {
+    return apiGet<ListPackagesResponse>("/packages", params);
+  }
+  const statuses = ["received", "delivered", "returned"];
+  const results = await Promise.all(
+    statuses.map((s) =>
+      apiGet<ListPackagesResponse>("/packages", { status: s }).catch(() => ({
+        items: [],
+        total: 0,
+      })),
+    ),
+  );
+  const items = results.flatMap((r) => r.items);
+  items.sort((a, b) => b.received_at.localeCompare(a.received_at));
+  return { items, total: items.length };
+}
 export const getPackage = (id: string) => apiGet<PackageItem>(`/packages/${id}`);
 export const listPackageCategories = () =>
   apiGet<ListCategoriesResponse>("/package-categories");

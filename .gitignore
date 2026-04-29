@@ -54,3 +54,8 @@ deployments/data/
 /apps/mobile/.flutter-plugins-dependencies
 /apps/mobile/.idea/
 /apps/mobile/*.iml
+
+# Playwright
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/.playwright/
