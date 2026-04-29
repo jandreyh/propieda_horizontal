@@ -1,57 +1,137 @@
-export default function AccessControlPage() {
-  const placeholderItems = [
-    { id: "ACC-001", visitor: "Juan Perez", unit: "Apto 301", type: "Visitante", entry: "2026-04-28 10:15", exit: "--", status: "Dentro" },
-    { id: "ACC-002", visitor: "Maria Lopez", unit: "Apto 805", type: "Domicilio", entry: "2026-04-28 09:45", exit: "2026-04-28 09:50", status: "Salio" },
-    { id: "ACC-003", visitor: "Carlos Ruiz", unit: "Local 2", type: "Proveedor", entry: "2026-04-28 08:00", exit: "--", status: "Dentro" },
-    { id: "ACC-004", visitor: "Ana Garcia", unit: "Apto 1102", type: "Visitante", entry: "2026-04-27 18:30", exit: "2026-04-27 21:00", status: "Salio" },
-    { id: "ACC-005", visitor: "Pedro Martinez", unit: "Apto 402", type: "Trabajador", entry: "2026-04-28 07:00", exit: "--", status: "Dentro" },
-  ];
+import PageHeader from "@/components/PageHeader";
+import { Card, CardHeader } from "@/components/Card";
+import Badge, { statusVariant } from "@/components/Badge";
+import EmptyState from "@/components/EmptyState";
+import { listActiveVisits, listBlacklist } from "@/lib/api/modules";
+import { ApiError } from "@/lib/api/server";
+import { formatDateTime, shortId } from "@/lib/format";
+
+async function safe<T>(fn: () => Promise<T>, fallback: T) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError) return fallback;
+    throw e;
+  }
+}
+
+export default async function AccessControlPage() {
+  const [visits, blacklist] = await Promise.all([
+    safe(() => listActiveVisits(), { items: [], total: 0 }),
+    safe(() => listBlacklist(), { items: [], total: 0 }),
+  ]);
 
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Control de acceso</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Registro de ingreso y salida de visitantes y proveedores
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Control de acceso"
+        subtitle="Visitas activas y blacklist del conjunto"
+      />
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Visitante</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Unidad</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tipo</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Entrada</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Salida</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {placeholderItems.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{item.id}</td>
-                <td className="px-6 py-4 text-sm text-gray-700">{item.visitor}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.unit}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.type}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.entry}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.exit}</td>
-                <td className="whitespace-nowrap px-6 py-4">
-                  <span
-                    className={`inline-block rounded-full px-2 py-1 text-xs font-medium ${
-                      item.status === "Dentro"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        <CardHeader
+          title="Visitas activas"
+          subtitle={`${visits.total} ingresos sin checkout`}
+        />
+        {visits.items.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title="Sin visitas activas" hint="Toda visita registrada salio" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <Th>Visitante</Th>
+                  <Th>Documento</Th>
+                  <Th>Unidad</Th>
+                  <Th>Origen</Th>
+                  <Th>Ingreso</Th>
+                  <Th>Estado</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {visits.items.map((v) => (
+                  <tr key={v.id} className="hover:bg-slate-50">
+                    <Td className="font-medium text-slate-900">{v.visitor_full_name}</Td>
+                    <Td className="font-mono text-xs">
+                      {v.visitor_document_type ?? ""} {v.visitor_document_number}
+                    </Td>
+                    <Td className="font-mono text-xs text-slate-500">
+                      {v.unit_id ? shortId(v.unit_id) : "—"}
+                    </Td>
+                    <Td>{v.source}</Td>
+                    <Td className="text-xs text-slate-600">
+                      {formatDateTime(v.entry_time)}
+                    </Td>
+                    <Td>
+                      <Badge variant={statusVariant(v.status)}>{v.status}</Badge>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Blacklist"
+          subtitle={`${blacklist.total} personas bloqueadas`}
+        />
+        {blacklist.items.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title="Blacklist vacia" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <Th>Documento</Th>
+                  <Th>Nombre</Th>
+                  <Th>Razon</Th>
+                  <Th>Vence</Th>
+                  <Th>Estado</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {blacklist.items.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-50">
+                    <Td className="font-mono text-xs">
+                      {b.document_type} {b.document_number}
+                    </Td>
+                    <Td>{b.full_name ?? "—"}</Td>
+                    <Td className="max-w-md truncate">{b.reason}</Td>
+                    <Td className="text-xs text-slate-600">
+                      {formatDateTime(b.expires_at)}
+                    </Td>
+                    <Td>
+                      <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+      {children}
+    </th>
+  );
+}
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <td className={`whitespace-nowrap px-4 py-3 text-sm text-slate-700 ${className}`}>
+      {children}
+    </td>
   );
 }

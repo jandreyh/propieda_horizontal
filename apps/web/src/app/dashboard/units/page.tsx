@@ -1,58 +1,97 @@
-export default function UnitsPage() {
-  const placeholderItems = [
-    { id: "UNT-001", code: "Apto 301", block: "Torre A", floor: "3", area: "72 m2", type: "Apartamento", status: "Ocupado" },
-    { id: "UNT-002", code: "Apto 502", block: "Torre A", floor: "5", area: "85 m2", type: "Apartamento", status: "Ocupado" },
-    { id: "UNT-003", code: "Apto 805", block: "Torre B", floor: "8", area: "72 m2", type: "Apartamento", status: "Vacante" },
-    { id: "UNT-004", code: "Local 2", block: "Comercial", floor: "1", area: "45 m2", type: "Local", status: "Ocupado" },
-    { id: "UNT-005", code: "Apto 1102", block: "Torre B", floor: "11", area: "95 m2", type: "Apartamento", status: "Ocupado" },
-    { id: "UNT-006", code: "Apto 402", block: "Torre A", floor: "4", area: "72 m2", type: "Apartamento", status: "Ocupado" },
-  ];
+import PageHeader from "@/components/PageHeader";
+import { Card } from "@/components/Card";
+import Badge, { statusVariant } from "@/components/Badge";
+import EmptyState from "@/components/EmptyState";
+import { listUnits } from "@/lib/api/modules";
+import { ApiError } from "@/lib/api/server";
+import { formatDateTime, shortId } from "@/lib/format";
+
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<{ data: T; error: string | null }> {
+  try {
+    return { data: await fn(), error: null };
+  } catch (e) {
+    if (e instanceof ApiError) return { data: fallback, error: e.problem.detail || e.problem.title };
+    throw e;
+  }
+}
+
+export default async function UnitsPage() {
+  const { data, error } = await safe(() => listUnits(), { items: [] });
+  const { items } = data;
 
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Unidades</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Apartamentos, casas, locales y demas unidades del conjunto
-      </p>
+      <PageHeader
+        title="Unidades"
+        subtitle="Apartamentos, casas, locales y oficinas del conjunto"
+      />
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Codigo</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bloque</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Piso</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Area</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tipo</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {placeholderItems.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{item.id}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.code}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.block}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.floor}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.area}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.type}</td>
-                <td className="whitespace-nowrap px-6 py-4">
-                  <span
-                    className={`inline-block rounded-full px-2 py-1 text-xs font-medium ${
-                      item.status === "Ocupado"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-yellow-100 text-yellow-700"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <Card>
+        {items.length === 0 ? (
+          <EmptyState
+            title="Sin unidades registradas"
+            hint="Agrega unidades via POST /units"
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <Th>Codigo</Th>
+                  <Th>Tipo</Th>
+                  <Th>Area m²</Th>
+                  <Th>Habitaciones</Th>
+                  <Th>Coeficiente</Th>
+                  <Th>Estado</Th>
+                  <Th>Creado</Th>
+                  <Th>ID</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {items.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-50">
+                    <Td className="font-medium text-slate-900">{u.code}</Td>
+                    <Td>{u.type}</Td>
+                    <Td>{u.area_m2 ?? "—"}</Td>
+                    <Td>{u.bedrooms ?? "—"}</Td>
+                    <Td>{u.coefficient ?? "—"}</Td>
+                    <Td>
+                      <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
+                    </Td>
+                    <Td className="text-xs text-slate-500">
+                      {formatDateTime(u.created_at)}
+                    </Td>
+                    <Td className="font-mono text-xs text-slate-400">
+                      {shortId(u.id)}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+      {children}
+    </th>
+  );
+}
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <td className={`whitespace-nowrap px-4 py-3 text-sm text-slate-700 ${className}`}>
+      {children}
+    </td>
   );
 }

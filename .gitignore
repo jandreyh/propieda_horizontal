@@ -40,3 +40,22 @@ deployments/data/
 # Claude Code session artifacts
 .claude/scheduled_tasks.lock
 .claude/local_*
+
+# Seed binary
+/apps/api/seed-demo
+/apps/api/seed-demo.exe
+/apps/api/api
+/apps/api/api.exe
+
+# Flutter
+/apps/mobile/build/
+/apps/mobile/.dart_tool/
+/apps/mobile/.flutter-plugins
+/apps/mobile/.flutter-plugins-dependencies
+/apps/mobile/.idea/
+/apps/mobile/*.iml
+
+# Playwright
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/.playwright/

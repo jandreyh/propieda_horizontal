@@ -17,7 +17,7 @@ gana este documento — pide aclaracion al usuario antes de proceder.
 | Migraciones | `golang-migrate` | latest | carpetas `central/` y `tenant/` |
 | Base de datos | PostgreSQL | 18 | |
 | Frontend Web | Next.js | 16.2.3 | App Router, TypeScript |
-| Movil | Expo | SDK 55 | RN 0.83, TypeScript, app dinamica unica |
+| Movil | Flutter + Dart | 3.27+ / 3.6+ | Material 3, target web/Android/iOS desde un solo codigo. Ver ADR 0006. |
 | Observabilidad | OpenTelemetry para Go | latest | logs estructurados, traces, metrics |
 | Testing backend | `go test` + Testcontainers for Go | latest | integration tests reales contra Postgres |
 | Testing E2E web | Playwright | latest | |

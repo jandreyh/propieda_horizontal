@@ -181,6 +181,15 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 		RequestsPerSecond: 50,
 		Burst:             100,
 	}))
+	r.Use(middleware.CORS(middleware.CORSConfig{
+		AllowedOrigins: []string{
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"http://localhost:3002",
+			"http://127.0.0.1:3000",
+			"http://127.0.0.1:3002",
+		},
+	}))
 
 	// Rutas publicas (sin tenant).
 	r.Get("/health", handlers.Health)

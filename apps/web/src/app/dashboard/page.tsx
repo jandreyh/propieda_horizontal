@@ -1,102 +1,111 @@
-import Link from "next/link";
+import PageHeader from "@/components/PageHeader";
+import { Card, CardHeader, StatCard } from "@/components/Card";
+import Badge, { statusVariant } from "@/components/Badge";
+import EmptyState from "@/components/EmptyState";
+import {
+  listUnits,
+  listPackages,
+  listActiveVisits,
+  listAnnouncementsFeed,
+} from "@/lib/api/modules";
+import { ApiError } from "@/lib/api/server";
+import { formatDateTime } from "@/lib/format";
 
-interface ModuleCard {
-  title: string;
-  description: string;
-  href: string;
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError) return fallback;
+    throw e;
+  }
 }
 
-const modules: ModuleCard[] = [
-  {
-    title: "Finanzas",
-    description: "Facturacion, pagos y cartera de cobros",
-    href: "/dashboard/finance",
-  },
-  {
-    title: "Reservas",
-    description: "Reserva de areas comunes y zonas sociales",
-    href: "/dashboard/reservations",
-  },
-  {
-    title: "Asambleas",
-    description: "Reuniones de copropietarios y votaciones",
-    href: "/dashboard/assemblies",
-  },
-  {
-    title: "Incidentes",
-    description: "Reporte y seguimiento de incidentes",
-    href: "/dashboard/incidents",
-  },
-  {
-    title: "Sanciones",
-    description: "Multas y sanciones a infractores",
-    href: "/dashboard/penalties",
-  },
-  {
-    title: "PQRS",
-    description: "Peticiones, quejas, reclamos y sugerencias",
-    href: "/dashboard/pqrs",
-  },
-  {
-    title: "Notificaciones",
-    description: "Alertas y preferencias de comunicacion",
-    href: "/dashboard/notifications",
-  },
-  {
-    title: "Parqueaderos",
-    description: "Gestion de espacios de parqueo",
-    href: "/dashboard/parking",
-  },
-  {
-    title: "Paquetes",
-    description: "Correspondencia y paqueteria",
-    href: "/dashboard/packages",
-  },
-  {
-    title: "Control de acceso",
-    description: "Operaciones de porteria y visitantes",
-    href: "/dashboard/access-control",
-  },
-  {
-    title: "Anuncios",
-    description: "Tablero de anuncios de la comunidad",
-    href: "/dashboard/announcements",
-  },
-  {
-    title: "Unidades",
-    description: "Apartamentos, casas y locales",
-    href: "/dashboard/units",
-  },
-  {
-    title: "Usuarios",
-    description: "Residentes, administradores y personal",
-    href: "/dashboard/users",
-  },
-];
+export default async function DashboardPage() {
+  const [units, packages, visits, feed] = await Promise.all([
+    safe(() => listUnits(), { items: [] }),
+    safe(() => listPackages(), { items: [], total: 0 }),
+    safe(() => listActiveVisits(), { items: [], total: 0 }),
+    safe(() => listAnnouncementsFeed(), { items: [], total: 0 }),
+  ]);
 
-export default function DashboardPage() {
+  const pendingPackages = packages.items.filter((p) => p.status === "RECEIVED");
+
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">
-        Panel de administracion
-      </h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Seleccione un modulo para comenzar
-      </p>
+      <PageHeader
+        title="Resumen"
+        subtitle="Vista rapida de la operacion del conjunto"
+      />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {modules.map((mod) => (
-          <Link
-            key={mod.href}
-            href={mod.href}
-            className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
-          >
-            <h2 className="mb-1 text-base font-semibold text-gray-900">
-              {mod.title}
-            </h2>
-            <p className="text-sm text-gray-500">{mod.description}</p>
-          </Link>
-        ))}
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Unidades" value={units.items.length} />
+        <StatCard
+          label="Paquetes en porteria"
+          value={pendingPackages.length}
+          hint={`Total ${packages.total}`}
+        />
+        <StatCard
+          label="Visitas activas"
+          value={visits.total}
+          hint="No checkout aun"
+        />
+        <StatCard
+          label="Anuncios vigentes"
+          value={feed.total}
+          hint="Publicados"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Paquetes pendientes" subtitle="Por entregar al residente" />
+          <div className="p-5">
+            {pendingPackages.length === 0 ? (
+              <EmptyState title="Sin paquetes pendientes" hint="Todo entregado" />
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {pendingPackages.slice(0, 5).map((p) => (
+                  <li key={p.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">
+                        {p.recipient_name}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Recibido {formatDateTime(p.received_at)}
+                      </div>
+                    </div>
+                    <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Anuncios recientes" />
+          <div className="p-5">
+            {feed.items.length === 0 ? (
+              <EmptyState title="Sin anuncios" />
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {feed.items.slice(0, 5).map((a) => (
+                  <li key={a.id} className="py-3">
+                    <div className="flex items-center gap-2">
+                      {a.pinned && <Badge variant="warning">Fijado</Badge>}
+                      <div className="text-sm font-medium text-slate-900">
+                        {a.title}
+                      </div>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                      {a.body}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
