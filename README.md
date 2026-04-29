@@ -114,9 +114,10 @@ lefthook install
 | Bloque | Fases | Comando | Estado |
 |--------|-------|---------|--------|
 | MVP | 0-7 | `/fase N` | Completas |
-| POST-MVP | 8-15 | `/descubrir N` -> spec -> `/fase N` | Specs Frozen-Auto + migraciones (Go pendiente) |
+| POST-MVP | 8-15 | `/descubrir N` -> spec -> `/fase N` | Completas |
+| Frontends | web + mobile | scaffold | Scaffold listo |
 
-Modulos MVP entregados:
+### Modulos MVP (fases 0-7)
 - Plataforma: chi server + middlewares (request_id, logging, recovery,
   rate_limit, tenant_resolver), pgxpool central + Registry por tenant
   con single-flight, RFC 7807, golang-migrate.
@@ -133,9 +134,19 @@ Modulos MVP entregados:
 - Hardening: `audit_logs` append-only con trigger, indices criticos,
   runbook operativo en `docs/runbook.md`.
 
-Runtime contra Postgres 18 esta en construccion: el codigo y las
-migraciones estan listos. La verificacion end-to-end con Docker se hace
-en piloto (ver runbook).
+### Modulos POST-MVP (fases 8-15)
+- `parking` — parqueaderos, asignaciones permanentes, reservas visitante, sorteo determinista.
+- `finance` — plan de cuentas, centros de costo, cobros, pagos, asientos contables, cierres de periodo, webhooks idempotentes.
+- `reservations` — areas comunes, reservas con blackouts y reglas de antelacion.
+- `assemblies` — asambleas, convocatorias, asistencia, poderes, mociones, votaciones, actas, firmas.
+- `incidents` — reportes de incidentes con adjuntos, historial de estados, asignaciones.
+- `penalties` — catalogo de multas, sanciones, apelaciones, historial.
+- `pqrs` — categorias, tickets, respuestas, historial de estados.
+- `notifications` — plantillas, preferencias, consentimientos, push tokens, config de proveedores, entregas con outbox.
+
+### Frontends
+- `apps/web` — Next.js 16.2.4, App Router, TypeScript, Tailwind CSS v4. Login + dashboard con 13 paginas de modulos.
+- `apps/mobile` — Expo SDK 55, React Native 0.83, TypeScript. Login + home con tarjetas de modulos.
 
 ## Decisiones arquitectonicas (ADRs)
 
