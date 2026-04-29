@@ -2,9 +2,9 @@ import PageHeader from "@/components/PageHeader";
 import { Card } from "@/components/Card";
 import Badge, { statusVariant } from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
-import { listPackages } from "@/lib/api/modules";
+import { listVehicles } from "@/lib/api/modules";
 import { ApiError } from "@/lib/api/server";
-import { formatDateTime, shortId } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<{ data: T; error: string | null }> {
   try {
@@ -15,15 +15,15 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<{ data: T; er
   }
 }
 
-export default async function PackagesPage() {
-  const { data, error } = await safe(() => listPackages(), { items: [], total: 0 });
+export default async function VehiclesPage() {
+  const { data, error } = await safe(() => listVehicles(), { items: [], total: 0 });
   const { items, total } = data;
 
   return (
     <div>
       <PageHeader
-        title="Paquetes"
-        subtitle={`Correspondencia y paqueteria · Total: ${total}`}
+        title="Vehiculos"
+        subtitle={`Vehiculos registrados en el conjunto · Total: ${total}`}
       />
 
       {error && (
@@ -34,48 +34,35 @@ export default async function PackagesPage() {
 
       <Card>
         {items.length === 0 ? (
-          <EmptyState
-            title="Sin paquetes registrados"
-            hint="El guarda los registra desde porteria"
-          />
+          <EmptyState title="Sin vehiculos" hint="Registralos via POST /vehicles" />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
-                  <Th>Destinatario</Th>
-                  <Th>Unidad</Th>
-                  <Th>Operador</Th>
-                  <Th>Tracking</Th>
-                  <Th>Recibido</Th>
-                  <Th>Entregado</Th>
+                  <Th>Placa</Th>
+                  <Th>Tipo</Th>
+                  <Th>Marca</Th>
+                  <Th>Modelo</Th>
+                  <Th>Color</Th>
+                  <Th>Año</Th>
                   <Th>Estado</Th>
-                  <Th>v</Th>
+                  <Th>Creado</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <Td className="font-medium text-slate-900">
-                      {p.recipient_name}
-                    </Td>
-                    <Td className="font-mono text-xs text-slate-500">
-                      {shortId(p.unit_id)}
-                    </Td>
-                    <Td>{p.carrier ?? "—"}</Td>
-                    <Td className="font-mono text-xs">
-                      {p.tracking_number ?? "—"}
-                    </Td>
-                    <Td className="text-xs text-slate-600">
-                      {formatDateTime(p.received_at)}
-                    </Td>
-                    <Td className="text-xs text-slate-600">
-                      {formatDateTime(p.delivered_at)}
-                    </Td>
+                {items.map((v) => (
+                  <tr key={v.id} className="hover:bg-slate-50">
+                    <Td className="font-mono font-medium text-slate-900">{v.plate}</Td>
+                    <Td>{v.type}</Td>
+                    <Td>{v.brand ?? "—"}</Td>
+                    <Td>{v.model ?? "—"}</Td>
+                    <Td>{v.color ?? "—"}</Td>
+                    <Td>{v.year ?? "—"}</Td>
                     <Td>
-                      <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
+                      <Badge variant={statusVariant(v.status)}>{v.status}</Badge>
                     </Td>
-                    <Td className="text-xs text-slate-400">{p.version}</Td>
+                    <Td className="text-xs text-slate-500">{formatDateTime(v.created_at)}</Td>
                   </tr>
                 ))}
               </tbody>

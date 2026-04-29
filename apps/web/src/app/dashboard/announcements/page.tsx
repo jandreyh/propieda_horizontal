@@ -1,75 +1,74 @@
-export default function AnnouncementsPage() {
-  const placeholderItems = [
-    {
-      id: "ANN-001",
-      title: "Corte de agua programado",
-      content: "Se realizara mantenimiento en el tanque principal el 3 de mayo de 8:00 a 14:00.",
-      author: "Administracion",
-      date: "2026-04-28",
-      priority: "Alta",
-    },
-    {
-      id: "ANN-002",
-      title: "Horario de piscina actualizado",
-      content: "A partir del 1 de mayo, la piscina estara disponible de 6:00 a 20:00.",
-      author: "Administracion",
-      date: "2026-04-25",
-      priority: "Normal",
-    },
-    {
-      id: "ANN-003",
-      title: "Fumigacion de zonas comunes",
-      content: "Se realizara fumigacion el sabado 4 de mayo. Se recomienda mantener mascotas dentro de los apartamentos.",
-      author: "Administracion",
-      date: "2026-04-22",
-      priority: "Alta",
-    },
-    {
-      id: "ANN-004",
-      title: "Nuevo horario de porteria",
-      content: "El cambio de turno de porteria sera a las 6:00, 14:00 y 22:00.",
-      author: "Seguridad",
-      date: "2026-04-20",
-      priority: "Normal",
-    },
-  ];
+import PageHeader from "@/components/PageHeader";
+import { Card } from "@/components/Card";
+import Badge, { statusVariant } from "@/components/Badge";
+import EmptyState from "@/components/EmptyState";
+import { listAnnouncementsFeed } from "@/lib/api/modules";
+import { ApiError } from "@/lib/api/server";
+import { formatDateTime } from "@/lib/format";
+
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<{ data: T; error: string | null }> {
+  try {
+    return { data: await fn(), error: null };
+  } catch (e) {
+    if (e instanceof ApiError) return { data: fallback, error: e.problem.detail || e.problem.title };
+    throw e;
+  }
+}
+
+export default async function AnnouncementsPage() {
+  const { data, error } = await safe(() => listAnnouncementsFeed(), { items: [], total: 0 });
+  const { items, total } = data;
 
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Anuncios</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Tablero de anuncios y comunicados de la comunidad
-      </p>
+      <PageHeader
+        title="Anuncios"
+        subtitle={`Tablero de comunicados · ${total} publicados`}
+      />
 
-      <div className="space-y-4">
-        {placeholderItems.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-lg border border-gray-200 bg-white p-5"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">
-                {item.title}
-              </h2>
-              <span
-                className={`inline-block rounded-full px-2 py-1 text-xs font-medium ${
-                  item.priority === "Alta"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                {item.priority}
-              </span>
-            </div>
-            <p className="mb-3 text-sm text-gray-700">{item.content}</p>
-            <div className="flex items-center gap-4 text-xs text-gray-500">
-              <span>Por: {item.author}</span>
-              <span>{item.date}</span>
-              <span className="text-gray-400">{item.id}</span>
-            </div>
-          </div>
-        ))}
-      </div>
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <EmptyState title="Sin anuncios" hint="Solo admin con permiso announcement.publish" />
+      ) : (
+        <div className="space-y-3">
+          {items.map((a) => (
+            <Card key={a.id} className="px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {a.pinned && <Badge variant="warning">Fijado</Badge>}
+                    <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
+                    <span className="text-xs text-slate-400">
+                      {formatDateTime(a.published_at)}
+                    </span>
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-slate-900">
+                    {a.title}
+                  </h3>
+                  <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+                    {a.body}
+                  </p>
+                  {a.audiences.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {a.audiences.map((aud, i) => (
+                        <Badge key={i} variant="info">
+                          {aud.target_type}
+                          {aud.target_id ? `:${aud.target_id.slice(0, 6)}` : ""}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

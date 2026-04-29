@@ -1,56 +1,85 @@
-export default function UsersPage() {
-  const placeholderItems = [
-    { id: "USR-001", name: "Carlos Rodriguez", document: "CC 1.234.567", unit: "Apto 301", role: "Propietario", status: "Activo" },
-    { id: "USR-002", name: "Ana Martinez", document: "CC 9.876.543", unit: "Apto 502", role: "Arrendatario", status: "Activo" },
-    { id: "USR-003", name: "Luis Gomez", document: "CC 5.555.555", unit: "--", role: "Administrador", status: "Activo" },
-    { id: "USR-004", name: "Maria Fernandez", document: "CC 3.333.333", unit: "Apto 805", role: "Propietario", status: "Inactivo" },
-    { id: "USR-005", name: "Jorge Diaz", document: "CC 7.777.777", unit: "--", role: "Portero", status: "Activo" },
-    { id: "USR-006", name: "Sandra Lopez", document: "CC 2.222.222", unit: "Local 2", role: "Propietario", status: "Activo" },
-  ];
+import PageHeader from "@/components/PageHeader";
+import { Card, CardHeader } from "@/components/Card";
+import Badge from "@/components/Badge";
+import EmptyState from "@/components/EmptyState";
+import { listRoles, listPermissions } from "@/lib/api/modules";
+import { ApiError } from "@/lib/api/server";
+
+async function safe<T>(fn: () => Promise<T>, fallback: T) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError) return fallback;
+    throw e;
+  }
+}
+
+export default async function UsersPage() {
+  const [roles, perms] = await Promise.all([
+    safe(() => listRoles(), { items: [] }),
+    safe(() => listPermissions(), { items: [] }),
+  ]);
+
+  const grouped: Record<string, typeof perms.items> = {};
+  for (const p of perms.items) {
+    const key = p.namespace.split(".")[0] || "general";
+    grouped[key] = grouped[key] ?? [];
+    grouped[key].push(p);
+  }
 
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Usuarios</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Residentes, administradores y personal del conjunto
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Usuarios y roles"
+        subtitle="Catalogo de roles del conjunto y namespaces de permisos"
+      />
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Nombre</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Documento</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Unidad</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Rol</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {placeholderItems.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{item.id}</td>
-                <td className="px-6 py-4 text-sm text-gray-700">{item.name}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.document}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.unit}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.role}</td>
-                <td className="whitespace-nowrap px-6 py-4">
-                  <span
-                    className={`inline-block rounded-full px-2 py-1 text-xs font-medium ${
-                      item.status === "Activo"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </td>
-              </tr>
+      <Card>
+        <CardHeader title="Roles" subtitle={`${roles.items.length} roles definidos`} />
+        {roles.items.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title="Sin roles" />
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {roles.items.map((r) => (
+              <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-900">{r.name}</span>
+                    {r.is_system && <Badge variant="info">sistema</Badge>}
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">{r.description}</p>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Catalogo de permisos"
+          subtitle={`${perms.items.length} namespaces`}
+        />
+        <div className="space-y-4 p-5">
+          {Object.entries(grouped).map(([group, items]) => (
+            <div key={group}>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                {group}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map((p) => (
+                  <Badge key={p.id} variant="neutral">
+                    {p.namespace}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ))}
+          {perms.items.length === 0 && <EmptyState title="Sin permisos cargados" />}
+        </div>
+      </Card>
     </div>
   );
 }

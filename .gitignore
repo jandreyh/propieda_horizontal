@@ -40,3 +40,9 @@ deployments/data/
 # Claude Code session artifacts
 .claude/scheduled_tasks.lock
 .claude/local_*
+
+# Seed binary
+/apps/api/seed-demo
+/apps/api/seed-demo.exe
+/apps/api/api
+/apps/api/api.exe
