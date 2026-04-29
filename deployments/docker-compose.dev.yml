@@ -1,0 +1,147 @@
+# =============================================================================
+# Stack DEV completo para SaaS Propiedad Horizontal.
+#
+#   - pg-central          → Postgres 18 Control Plane
+#   - pg-tenant-template  → Postgres 18 template para tenants
+#   - dev                 → Devcontainer con Go, Node, Claude Code, etc.
+#
+# Uso:
+#   docker compose -f deployments/docker-compose.dev.yml up -d
+#   docker compose -f deployments/docker-compose.dev.yml exec dev bash
+#
+# Dentro del contenedor:
+#   claude                                # iniciar Claude Code (login 1ra vez)
+#   go test ./apps/api/...                # backend
+#   pnpm --filter web dev                 # frontend (cuando exista)
+#   migrate -path migrations/central -database "$DATABASE_URL_CENTRAL" up
+#
+# Para parar:
+#   docker compose -f deployments/docker-compose.dev.yml down
+#
+# Para reset total (borra DBs y caches):
+#   docker compose -f deployments/docker-compose.dev.yml down -v
+#
+# Variables de entorno (opcionales) — exportar antes de `up`:
+#   ANTHROPIC_API_KEY   → si quieres saltarte el OAuth de Claude Code
+#   GIT_USER_NAME       → para auto-configurar git user.name dentro
+#   GIT_USER_EMAIL      → idem user.email
+# =============================================================================
+
+name: ph-dev
+
+services:
+  pg-central:
+    image: postgres:18-alpine
+    container_name: ph-pg-central
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ph
+      POSTGRES_PASSWORD: ph
+      POSTGRES_DB: ph_central
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-central-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ph -d ph_central"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ph-net
+
+  pg-tenant-template:
+    image: postgres:18-alpine
+    container_name: ph-pg-tenant-template
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ph
+      POSTGRES_PASSWORD: ph
+      POSTGRES_DB: ph_tenant_template
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-tenant-template-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ph -d ph_tenant_template"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ph-net
+
+  dev:
+    build:
+      context: ..
+      dockerfile: deployments/dev.Dockerfile
+    image: ph-dev:latest
+    container_name: ph-dev
+    hostname: ph-dev
+    restart: unless-stopped
+    init: true
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true
+    environment:
+      TZ: America/Bogota
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      # URLs de DB (usan los nombres de servicio en la red de compose)
+      DATABASE_URL_CENTRAL: "postgres://ph:ph@pg-central:5432/ph_central?sslmode=disable"
+      DATABASE_URL_TENANT_TEMPLATE: "postgres://ph:ph@pg-tenant-template:5432/ph_tenant_template?sslmode=disable"
+      # Para que Testcontainers use el daemon del host via socket compartido
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    volumes:
+      # Workspace: bind del repo del host
+      - ..:/workspace:cached
+      # Docker socket: para que `go test` con Testcontainers cree containers
+      # contra el daemon de Docker Desktop del host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Caches persistentes
+      - dev-go-mod:/go/pkg/mod
+      - dev-go-build:/root/.cache/go-build
+      - dev-npm-cache:/root/.npm
+      - dev-pnpm-store:/root/.local/share/pnpm/store
+      # Config persistente: Claude Code, gh, ssh, bash history
+      - dev-claude:/root/.claude
+      - dev-gh-config:/root/.config/gh
+      - dev-ssh:/root/.ssh
+      - dev-bash:/root/.bash_history.d
+    ports:
+      - "8080:8080"      # Go API (chi)
+      - "3000:3000"      # Next.js dev server
+      - "8081:8081"      # Metro/Expo bundler
+      - "19000:19000"    # Expo
+      - "19001:19001"    # Expo
+      - "19002:19002"    # Expo
+    depends_on:
+      pg-central:
+        condition: service_healthy
+      pg-tenant-template:
+        condition: service_healthy
+    extra_hosts:
+      # Permite que el contenedor resuelva host.docker.internal en Linux
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ph-net
+
+volumes:
+  pg-central-data:
+  pg-tenant-template-data:
+  dev-go-mod:
+  dev-go-build:
+  dev-npm-cache:
+  dev-pnpm-store:
+  dev-claude:
+  dev-gh-config:
+  dev-ssh:
+  dev-bash:
+
+networks:
+  ph-net:
+    driver: bridge

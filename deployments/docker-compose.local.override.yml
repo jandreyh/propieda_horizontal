@@ -1,0 +1,20 @@
+version: "3.9"
+
+# Override para desarrollo local cuando los puertos 5432/5433 ya estan ocupados.
+# Usa puertos 5434 (central) y 5435 (tenant-template).
+#
+# Uso:
+#   docker compose -f deployments/docker-compose.local.yml -f deployments/docker-compose.local.override.yml up -d
+#
+# Variables de entorno necesarias para la API:
+#   DB_CENTRAL_URL=postgres://ph:ph@localhost:5434/ph_central?sslmode=disable
+#   DB_TENANT_TEMPLATE_URL=postgres://ph:ph@localhost:5435/ph_tenant_template?sslmode=disable
+
+services:
+  pg-central:
+    ports:
+      - "5434:5432"
+
+  pg-tenant-template:
+    ports:
+      - "5435:5432"

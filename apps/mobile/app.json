@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Propiedad Horizontal",
+    "slug": "propiedad-horizontal",
+    "scheme": "propiedadhorizontal",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.propiedadhorizontal.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.propiedadhorizontal.app"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
