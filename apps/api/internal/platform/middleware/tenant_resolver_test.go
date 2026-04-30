@@ -2,18 +2,21 @@ package middleware
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	dbpkg "github.com/saas-ph/api/internal/platform/db"
+	"github.com/saas-ph/api/internal/platform/jwtsign"
 	"github.com/saas-ph/api/internal/platform/tenantctx"
 )
 
@@ -40,19 +43,13 @@ func (f *fakeRegistry) Get(_ context.Context, slug string) (dbpkg.TenantMetadata
 	if !ok {
 		return dbpkg.TenantMetadata{}, nil, dbpkg.ErrTenantNotFound
 	}
-	// Devolvemos pool nil intencionalmente: el middleware solo lo
-	// inyecta en el contexto, no lo desreferencia. Los tests verifican
-	// el cableado, no la conexion real.
 	return meta, nil, nil
 }
 
-// silentLogger devuelve un slog.Logger que descarta toda salida.
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
 }
 
-// tenantCapturingHandler permite capturar el tenant que ve el handler
-// downstream y reportar si fue invocado.
 type tenantCapturingHandler struct {
 	called bool
 	tenant *tenantctx.Tenant
@@ -67,361 +64,221 @@ func (h *tenantCapturingHandler) handler() http.Handler {
 	})
 }
 
-func TestTenantResolver_ResolvesBySubdomain(t *testing.T) {
-	t.Parallel()
-
-	reg := newFakeRegistry()
-	reg.metas["acacias"] = dbpkg.TenantMetadata{
-		ID: "tenant-1", Slug: "acacias", DisplayName: "Acacias",
+// newTestSigner construye un Signer con clave efimera para tests.
+func newTestSigner(t *testing.T) *jwtsign.Signer {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
 	}
+	signer, err := jwtsign.NewSigner(jwtsign.SignerConfig{
+		KeyID: "test", PrivateKey: priv, PublicKey: pub,
+	})
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	return signer
+}
+
+// signClaimsToken emite un JWT con el sid+memberships+current_tenant indicados.
+func signClaimsToken(t *testing.T, s *jwtsign.Signer, subject, currentTenant, sid string, memberships []jwtsign.MembershipClaim) string {
+	t.Helper()
+	tok, err := s.SignPlatform(subject, sid, currentTenant, memberships, []string{"pwd"}, time.Minute)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return tok
+}
+
+// chainAuthThenResolver corre PlatformAuth seguido de TenantResolver.
+func chainAuthThenResolver(signer *jwtsign.Signer, reg tenantLookup, h http.Handler) http.Handler {
+	return PlatformAuth(PlatformAuthConfig{Signer: signer})(
+		TenantResolver(TenantResolverConfig{Registry: reg, Logger: silentLogger()})(h),
+	)
+}
+
+func TestTenantResolver_Success_FromJWT(t *testing.T) {
+	t.Parallel()
+	signer := newTestSigner(t)
+	reg := newFakeRegistry()
+	reg.metas["acacias"] = dbpkg.TenantMetadata{ID: "tenant-1", Slug: "acacias", DisplayName: "Acacias"}
 
 	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
+	srv := chainAuthThenResolver(signer, reg, cap.handler())
 
-	req := httptest.NewRequest(http.MethodGet, "http://acacias.ph.localhost/things", nil)
+	tok := signClaimsToken(t, signer, "user-1", "acacias", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantID: "tenant-1", TenantSlug: "acacias", TenantName: "Acacias"}})
+
+	req := httptest.NewRequest(http.MethodGet, "/anything", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
-
 	srv.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
 	}
-	if !cap.called {
-		t.Fatal("downstream handler was not called")
-	}
-	if cap.err != nil {
-		t.Fatalf("downstream FromCtx error: %v", cap.err)
-	}
-	if cap.tenant == nil || cap.tenant.Slug != "acacias" || cap.tenant.ID != "tenant-1" {
-		t.Fatalf("tenant in ctx mismatch: got %+v", cap.tenant)
-	}
-	if reg.lastSlugSeen != "acacias" {
-		t.Fatalf("registry last slug: want acacias, got %q", reg.lastSlugSeen)
+	if !cap.called || cap.tenant == nil || cap.tenant.Slug != "acacias" {
+		t.Errorf("tenant not injected: %+v", cap)
 	}
 }
 
-func TestTenantResolver_HeaderOverridesSubdomain(t *testing.T) {
+func TestTenantResolver_NoToken_401(t *testing.T) {
 	t.Parallel()
-
+	signer := newTestSigner(t)
 	reg := newFakeRegistry()
-	reg.metas["mobile-tenant"] = dbpkg.TenantMetadata{
-		ID: "tenant-mobile", Slug: "mobile-tenant", DisplayName: "Mobile",
-	}
+	srv := chainAuthThenResolver(signer, reg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
-
-	// El subdominio apunta a otro slug que NO existe en el registry; el
-	// header debe ganar y por tanto el lookup tiene que ir contra
-	// "mobile-tenant".
-	req := httptest.NewRequest(http.MethodGet, "http://otro.ph.localhost/things", nil)
-	req.Header.Set(HeaderTenantSlug, "mobile-tenant")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	rr := httptest.NewRecorder()
-
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if reg.lastSlugSeen != "mobile-tenant" {
-		t.Fatalf("expected header slug to win, registry saw %q", reg.lastSlugSeen)
-	}
-	if cap.tenant == nil || cap.tenant.Slug != "mobile-tenant" {
-		t.Fatalf("ctx tenant mismatch: got %+v", cap.tenant)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 }
 
-func TestTenantResolver_InvalidSlug(t *testing.T) {
+func TestTenantResolver_NoCurrentTenant_412(t *testing.T) {
 	t.Parallel()
+	signer := newTestSigner(t)
+	reg := newFakeRegistry()
+	srv := chainAuthThenResolver(signer, reg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
-	cases := []struct {
-		name   string
-		host   string
-		header string
-	}{
-		{name: "uppercase_subdomain", host: "ACME.ph.localhost"}, // se normaliza pero acepta? probemos invalido
-		{name: "header_with_underscore", host: "x.ph.localhost", header: "bad_slug"},
-		{name: "host_equals_base", host: "ph.localhost"},
-		{name: "host_outside_base", host: "tenant.example.com"},
-		{name: "header_with_space", host: "x.ph.localhost", header: "bad slug"},
-		{name: "header_starting_with_dash", host: "x.ph.localhost", header: "-bad"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			reg := newFakeRegistry()
-			cap := &tenantCapturingHandler{}
-			srv := TenantResolver(TenantResolverConfig{
-				Registry:   reg,
-				BaseDomain: "ph.localhost",
-				Logger:     silentLogger(),
-			})(cap.handler())
-
-			req := httptest.NewRequest(http.MethodGet, "http://"+tc.host+"/things", nil)
-			req.Host = tc.host
-			if tc.header != "" {
-				req.Header.Set(HeaderTenantSlug, tc.header)
-			}
-			rr := httptest.NewRecorder()
-
-			srv.ServeHTTP(rr, req)
-
-			// Caso especial: ACME.ph.localhost se lowercased a
-			// "acme.ph.localhost" que es valido. Si llegamos aqui con un
-			// 200 lo aceptamos siempre que el handler no haya visto
-			// tenant inexistente — pero en este test el registry esta
-			// vacio, asi que esperamos 4xx.
-			if rr.Code < 400 {
-				t.Fatalf("expected error status, got %d body=%s",
-					rr.Code, rr.Body.String())
-			}
-			if cap.called {
-				t.Fatalf("downstream handler should NOT be called on slug error, status=%d", rr.Code)
-			}
-			// Verifica content-type problem+json.
-			if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
-				t.Fatalf("expected problem+json, got %q", ct)
-			}
-			// Para los casos puramente de formato esperamos 400. Para
-			// "uppercase_subdomain" el slug normalizado es valido y el
-			// registry vacio responde 404.
-			var p struct {
-				Status int `json:"status"`
-			}
-			_ = json.NewDecoder(rr.Body).Decode(&p)
-			switch tc.name {
-			case "uppercase_subdomain":
-				if p.Status != http.StatusNotFound {
-					t.Fatalf("expected 404 for normalized-but-unknown slug, got %d", p.Status)
-				}
-			default:
-				if p.Status != http.StatusBadRequest {
-					t.Fatalf("expected 400, got %d", p.Status)
-				}
-			}
-		})
-	}
-}
-
-func TestTenantResolver_TenantNotFound(t *testing.T) {
-	t.Parallel()
-
-	reg := newFakeRegistry() // vacio -> ErrTenantNotFound
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
-
-	req := httptest.NewRequest(http.MethodGet, "http://desconocido.ph.localhost/things", nil)
+	tok := signClaimsToken(t, signer, "user-1", "", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantSlug: "acacias"}})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
 
+	if rr.Code != http.StatusPreconditionFailed {
+		t.Fatalf("expected 412, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var p map[string]any
+	_ = json.NewDecoder(rr.Body).Decode(&p)
+	if p["title"] != "Tenant Not Selected" {
+		t.Errorf("unexpected title: %v", p["title"])
+	}
+}
+
+func TestTenantResolver_NoMembership_403(t *testing.T) {
+	t.Parallel()
+	signer := newTestSigner(t)
+	reg := newFakeRegistry()
+	reg.metas["acacias"] = dbpkg.TenantMetadata{ID: "tenant-1", Slug: "acacias", DisplayName: "Acacias"}
+	srv := chainAuthThenResolver(signer, reg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	// claims dicen current_tenant=acacias, pero memberships solo trae demo2.
+	tok := signClaimsToken(t, signer, "user-1", "acacias", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantSlug: "demo2"}})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestTenantResolver_TenantNotFound_404(t *testing.T) {
+	t.Parallel()
+	signer := newTestSigner(t)
+	reg := newFakeRegistry() // no metas → ErrTenantNotFound
+	srv := chainAuthThenResolver(signer, reg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	tok := signClaimsToken(t, signer, "user-1", "ghost", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantSlug: "ghost"}})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusNotFound {
-		t.Fatalf("status: want 404, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if cap.called {
-		t.Fatal("downstream handler should NOT be called on tenant-not-found")
-	}
-	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
-		t.Fatalf("expected problem+json, got %q", ct)
+		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
 
-func TestTenantResolver_RegistryInternalError(t *testing.T) {
+func TestTenantResolver_RegistryError_500(t *testing.T) {
 	t.Parallel()
-
+	signer := newTestSigner(t)
 	reg := newFakeRegistry()
 	reg.errToReturn = errors.New("boom")
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
+	srv := chainAuthThenResolver(signer, reg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://acacias.ph.localhost/things", nil)
+	tok := signClaimsToken(t, signer, "user-1", "acacias", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantSlug: "acacias"}})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
-
 	srv.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("status: want 500, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if cap.called {
-		t.Fatal("downstream handler should NOT be called on registry error")
+		t.Fatalf("expected 500, got %d", rr.Code)
 	}
 }
 
-func TestTenantResolver_SkipBypassesResolution(t *testing.T) {
+func TestTenantResolver_NilRegistry_500(t *testing.T) {
 	t.Parallel()
+	signer := newTestSigner(t)
 
-	reg := newFakeRegistry()
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-		Skip: func(r *http.Request) bool {
-			return strings.HasPrefix(r.URL.Path, "/health") ||
-				strings.HasPrefix(r.URL.Path, "/superadmin/")
-		},
-	})(cap.handler())
-
-	// Path /health: aunque el host no tiene subdominio valido, el
-	// middleware debe saltarse la resolucion.
-	req := httptest.NewRequest(http.MethodGet, "http://ph.localhost/health", nil)
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if !cap.called {
-		t.Fatal("downstream handler should be called when Skip returns true")
-	}
-	if cap.err == nil {
-		t.Fatalf("expected ErrNoTenant when Skip bypasses, got tenant %+v", cap.tenant)
-	}
-	if !errors.Is(cap.err, tenantctx.ErrNoTenant) {
-		t.Fatalf("expected ErrNoTenant, got %v", cap.err)
-	}
-	if reg.calls != 0 {
-		t.Fatalf("registry should not be called when Skip returns true, got %d calls", reg.calls)
-	}
-}
-
-func TestTenantResolver_DownstreamReadsTenantFromCtx(t *testing.T) {
-	t.Parallel()
-
-	reg := newFakeRegistry()
-	reg.metas["villavo"] = dbpkg.TenantMetadata{
-		ID: "tenant-uuid-9", Slug: "villavo", DisplayName: "Villavicencio",
-	}
-
-	var (
-		seenID, seenSlug, seenName string
-		seenErr                    error
+	wrap := PlatformAuth(PlatformAuthConfig{Signer: signer})(
+		TenantResolver(TenantResolverConfig{Registry: nil, Logger: silentLogger()})(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		),
 	)
-	downstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t, err := tenantctx.FromCtx(r.Context())
-		if err != nil {
-			seenErr = err
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		seenID, seenSlug, seenName = t.ID, t.Slug, t.DisplayName
-		w.WriteHeader(http.StatusOK)
-	})
 
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(downstream)
-
-	req := httptest.NewRequest(http.MethodGet, "http://villavo.ph.localhost/api/things", nil)
+	tok := signClaimsToken(t, signer, "user-1", "acacias", "real-sid",
+		[]jwtsign.MembershipClaim{{TenantSlug: "acacias"}})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if seenErr != nil {
-		t.Fatalf("downstream FromCtx error: %v", seenErr)
-	}
-	if seenID != "tenant-uuid-9" || seenSlug != "villavo" || seenName != "Villavicencio" {
-		t.Fatalf("tenant fields mismatch: id=%q slug=%q name=%q",
-			seenID, seenSlug, seenName)
-	}
-}
-
-func TestTenantResolver_HostWithPortIsTrimmed(t *testing.T) {
-	t.Parallel()
-
-	reg := newFakeRegistry()
-	reg.metas["yopal"] = dbpkg.TenantMetadata{ID: "id-y", Slug: "yopal"}
-
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   reg,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
-
-	req := httptest.NewRequest(http.MethodGet, "http://yopal.ph.localhost:8080/x", nil)
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if cap.tenant == nil || cap.tenant.Slug != "yopal" {
-		t.Fatalf("expected slug yopal, got %+v", cap.tenant)
-	}
-}
-
-func TestTenantResolver_DefaultHeaderName(t *testing.T) {
-	t.Parallel()
-
-	reg := newFakeRegistry()
-	reg.metas["m1"] = dbpkg.TenantMetadata{ID: "id-m1", Slug: "m1"}
-
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry: reg,
-		// BaseDomain vacio: la unica via es el header.
-		Logger: silentLogger(),
-	})(cap.handler())
-
-	req := httptest.NewRequest(http.MethodGet, "http://anything/here", nil)
-	req.Header.Set(HeaderTenantSlug, "m1")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: want 200, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if cap.tenant == nil || cap.tenant.Slug != "m1" {
-		t.Fatalf("ctx tenant mismatch: got %+v", cap.tenant)
-	}
-}
-
-func TestTenantResolver_NilRegistryReturns500(t *testing.T) {
-	t.Parallel()
-
-	cap := &tenantCapturingHandler{}
-	srv := TenantResolver(TenantResolverConfig{
-		Registry:   nil,
-		BaseDomain: "ph.localhost",
-		Logger:     silentLogger(),
-	})(cap.handler())
-
-	req := httptest.NewRequest(http.MethodGet, "http://acacias.ph.localhost/x", nil)
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
+	wrap.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("status: want 500, got %d body=%s", rr.Code, rr.Body.String())
+		t.Fatalf("expected 500, got %d", rr.Code)
 	}
-	if cap.called {
-		t.Fatal("downstream should not be called when registry is nil")
+}
+
+func TestTenantResolver_Skip(t *testing.T) {
+	t.Parallel()
+	reg := newFakeRegistry()
+
+	called := false
+	mw := TenantResolver(TenantResolverConfig{
+		Registry: reg,
+		Logger:   silentLogger(),
+		Skip:     func(*http.Request) bool { return true },
+	})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if !called {
+		t.Error("Skip true should let request through without resolving")
+	}
+}
+
+func TestPlatformAuth_PreAuthRejected(t *testing.T) {
+	t.Parallel()
+	signer := newTestSigner(t)
+	mw := PlatformAuth(PlatformAuthConfig{Signer: signer})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	tok, err := signer.Sign("user-1", "", PreAuthSessionMarker, []string{"pre-auth:mfa"}, []string{"pwd"}, time.Minute)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for pre-auth token, got %d", rr.Code)
 	}
 }

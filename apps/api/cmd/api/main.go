@@ -205,10 +205,16 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 	// Rutas con tenant resuelto.
 	if registry != nil {
 		r.Group(func(tr chi.Router) {
+			tr.Use(middleware.PlatformAuth(middleware.PlatformAuthConfig{
+				Signer: signer,
+				Skip: func(req *http.Request) bool {
+					p := req.URL.Path
+					return p == "/health" || p == "/ready" || strings.HasPrefix(p, "/superadmin/")
+				},
+			}))
 			tr.Use(middleware.TenantResolver(middleware.TenantResolverConfig{
-				Registry:   registry,
-				BaseDomain: cfg.Tenant.BaseDomain,
-				Logger:     logger,
+				Registry: registry,
+				Logger:   logger,
 				Skip: func(req *http.Request) bool {
 					p := req.URL.Path
 					return p == "/health" || p == "/ready" || strings.HasPrefix(p, "/superadmin/")
