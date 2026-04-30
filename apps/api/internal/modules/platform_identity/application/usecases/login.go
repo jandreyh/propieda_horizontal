@@ -7,10 +7,16 @@ package usecases
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/saas-ph/api/internal/modules/platform_identity/application/dto"
 	"github.com/saas-ph/api/internal/modules/platform_identity/domain"
@@ -32,6 +38,7 @@ var (
 // Constantes de tiempo y formato.
 const (
 	accessTokenTTL  = 15 * time.Minute
+	refreshTokenTTL = 7 * 24 * time.Hour
 	preAuthTokenTTL = 5 * time.Minute
 	tokenTypeBearer = "Bearer"
 
@@ -45,10 +52,15 @@ const (
 )
 
 // LoginDeps agrupa las dependencias del usecase de login.
+//
+// Sessions es opcional. Si es nil, Login no persiste sesion ni emite
+// refresh_token (modo "stateless" para tests). Si esta presente, Login
+// crea una fila platform_user_sessions y devuelve refresh_token.
 type LoginDeps struct {
-	Users  domain.PlatformUserRepository
-	Signer *jwtsign.Signer
-	Now    func() time.Time
+	Users    domain.PlatformUserRepository
+	Sessions domain.SessionRepository
+	Signer   *jwtsign.Signer
+	Now      func() time.Time
 }
 
 // LoginUseCase implementa POST /auth/login segun ADR 0007.
@@ -170,9 +182,14 @@ func (uc *LoginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.
 		})
 	}
 
+	sessionID, refreshPlain, err := uc.issueSession(ctx, user.ID, now)
+	if err != nil {
+		return dto.LoginResponse{}, err
+	}
+
 	access, err := uc.deps.Signer.SignPlatform(
 		user.ID.String(),
-		newSessionID(now),
+		sessionID,
 		"",
 		mclaims,
 		[]string{"pwd"},
@@ -183,17 +200,50 @@ func (uc *LoginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.
 	}
 
 	return dto.LoginResponse{
-		AccessToken: access,
-		TokenType:   tokenTypeBearer,
-		ExpiresIn:   int(accessTokenTTL / time.Second),
-		Memberships: mdtos,
-		NeedsTenant: len(mdtos) != 1,
+		AccessToken:  access,
+		RefreshToken: refreshPlain,
+		TokenType:    tokenTypeBearer,
+		ExpiresIn:    int(accessTokenTTL / time.Second),
+		Memberships:  mdtos,
+		NeedsTenant:  len(mdtos) != 1,
 	}, nil
 }
 
-// newSessionID genera un identificador deterministico de sesion para el
-// JWT. En esta version es un timestamp; cuando se introduzca persistencia
-// de sesiones se reemplazara por el id de la fila correspondiente.
-func newSessionID(now time.Time) string {
-	return fmt.Sprintf("plat-%d", now.UnixNano())
+// issueSession crea una fila en platform_user_sessions (si Sessions repo
+// esta presente) y devuelve (sessionID, refreshPlain). Si Sessions es
+// nil, devuelve un sessionID sintetico y refreshPlain vacio (modo
+// stateless para tests donde no nos importa la persistencia).
+func (uc *LoginUseCase) issueSession(ctx context.Context, userID uuid.UUID, now time.Time) (string, string, error) {
+	if uc.deps.Sessions == nil {
+		return fmt.Sprintf("plat-%d", now.UnixNano()), "", nil
+	}
+	plain, hash, err := generateRefreshToken()
+	if err != nil {
+		return "", "", fmt.Errorf("%w: generate refresh: %w", ErrInternal, err)
+	}
+	session, err := uc.deps.Sessions.Create(ctx, userID, hash, nil, now.Add(refreshTokenTTL))
+	if err != nil {
+		return "", "", fmt.Errorf("%w: create session: %w", ErrInternal, err)
+	}
+	return session.ID.String(), plain, nil
+}
+
+// generateRefreshToken devuelve `(plain, sha256-hex)` con 32 bytes
+// aleatorios codificados en base64 url-safe.
+func generateRefreshToken() (string, string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", "", err
+	}
+	plain := base64.RawURLEncoding.EncodeToString(raw[:])
+	sum := sha256.Sum256([]byte(plain))
+	return plain, hex.EncodeToString(sum[:]), nil
+}
+
+// HashRefreshToken expone la convencion de hashing usada para el refresh
+// token (sha256 hex del valor base64). Compartido por usecases que
+// necesitan buscar la sesion sin volver a hashear inline.
+func HashRefreshToken(plain string) string {
+	sum := sha256.Sum256([]byte(plain))
+	return hex.EncodeToString(sum[:])
 }

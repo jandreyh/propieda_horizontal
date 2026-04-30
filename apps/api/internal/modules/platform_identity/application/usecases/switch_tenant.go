@@ -87,9 +87,13 @@ func (uc *SwitchTenantUseCase) Execute(ctx context.Context, subject string, req 
 	}
 
 	now := uc.deps.Now()
+	// SwitchTenant no crea nueva sesion: reusa el subject + emite un sid
+	// sintetico marcado con el timestamp. La revocacion sigue dependiendo
+	// del refresh token original.
+	sid := fmt.Sprintf("switch-%d", now.UnixNano())
 	access, err := uc.deps.Signer.SignPlatform(
 		subject,
-		newSessionID(now),
+		sid,
 		slug,
 		mclaims,
 		[]string{"pwd", "switch"},

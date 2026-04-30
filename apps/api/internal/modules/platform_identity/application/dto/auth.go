@@ -37,12 +37,26 @@ type MembershipDTO struct {
 // POST /auth/mfa/verify para completar el login.
 type LoginResponse struct {
 	AccessToken  string          `json:"access_token,omitempty"`
+	RefreshToken string          `json:"refresh_token,omitempty"`
 	TokenType    string          `json:"token_type,omitempty"`
 	ExpiresIn    int             `json:"expires_in,omitempty"`
 	Memberships  []MembershipDTO `json:"memberships,omitempty"`
 	NeedsTenant  bool            `json:"needs_tenant,omitempty"`
 	MFARequired  bool            `json:"mfa_required,omitempty"`
 	PreAuthToken string          `json:"pre_auth_token,omitempty"`
+}
+
+// RefreshRequest es el body de POST /auth/refresh.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshResponse devuelve el par access_token + refresh_token rotado.
+type RefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
 }
 
 // SwitchTenantRequest es el body de POST /auth/switch-tenant.

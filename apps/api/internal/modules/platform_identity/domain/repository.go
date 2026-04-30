@@ -42,6 +42,26 @@ type PlatformUserRepository interface {
 	HasMembership(ctx context.Context, userID uuid.UUID, slug string) (bool, error)
 }
 
+// ErrSessionNotFound se retorna cuando no hay sesion activa con el
+// token_hash buscado (expirada, revocada o inexistente).
+var ErrSessionNotFound = errors.New("platform_identity: session not found")
+
+// SessionRepository abstrae el acceso a `platform_user_sessions`.
+//
+// El JWT (access token) no se persiste — solo el refresh token plano
+// vive en el cliente, y el server guarda su SHA-256 hex como token_hash.
+type SessionRepository interface {
+	// Create inserta una sesion nueva.
+	Create(ctx context.Context, userID uuid.UUID, tokenHash string, userAgent *string, expiresAt time.Time) (*entities.PlatformSession, error)
+	// FindByTokenHash devuelve la sesion activa cuyo token_hash coincide,
+	// o ErrSessionNotFound si no existe / esta revocada / expiro.
+	FindByTokenHash(ctx context.Context, tokenHash string) (*entities.PlatformSession, error)
+	// Revoke marca una sesion como revocada con un motivo.
+	Revoke(ctx context.Context, sessionID uuid.UUID, reason string) error
+	// RevokeAllForUser revoca todas las sesiones activas del usuario.
+	RevokeAllForUser(ctx context.Context, userID uuid.UUID, reason string) error
+}
+
 // PushDeviceRepository abstrae el acceso a `platform_push_devices` para
 // el manejo de tokens FCM/APNs/Web a nivel plataforma.
 type PushDeviceRepository interface {

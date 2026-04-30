@@ -28,6 +28,8 @@ type handlers struct {
 	switchTenantUC    *usecases.SwitchTenantUseCase
 	registerDeviceUC  *usecases.RegisterPushDeviceUseCase
 	removeDeviceUC    *usecases.RemovePushDeviceUseCase
+	refreshUC         *usecases.RefreshUseCase
+	logoutUC          *usecases.LogoutUseCase
 }
 
 // authContextKey es la clave para colocar las claims del access token
@@ -79,6 +81,33 @@ func (h *handlers) memberships(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *handlers) refresh(w http.ResponseWriter, r *http.Request) {
+	var req dto.RefreshRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		apperrors.Write(w, apperrors.BadRequest(err.Error()).WithInstance(r.URL.Path))
+		return
+	}
+	resp, err := h.refreshUC.Execute(r.Context(), req)
+	if err != nil {
+		h.writeUseCaseError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *handlers) logout(w http.ResponseWriter, r *http.Request) {
+	var req dto.RefreshRequest // mismo body shape: refresh_token
+	if err := decodeJSONBody(r, &req); err != nil {
+		apperrors.Write(w, apperrors.BadRequest(err.Error()).WithInstance(r.URL.Path))
+		return
+	}
+	if err := h.logoutUC.Execute(r.Context(), req.RefreshToken); err != nil {
+		h.writeUseCaseError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handlers) registerPushDevice(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +232,8 @@ func (h *handlers) writeUseCaseError(w http.ResponseWriter, r *http.Request, err
 		apperrors.Write(w, apperrors.Forbidden("no membership in tenant").WithInstance(r.URL.Path))
 	case errors.Is(err, usecases.ErrInvalidDevice):
 		apperrors.Write(w, apperrors.BadRequest("invalid push device").WithInstance(r.URL.Path))
+	case errors.Is(err, usecases.ErrInvalidRefresh):
+		apperrors.Write(w, apperrors.Unauthorized("invalid refresh token").WithInstance(r.URL.Path))
 	default:
 		if h.logger != nil {
 			h.logger.ErrorContext(r.Context(), "platform_identity: internal error",

@@ -20,11 +20,12 @@ import (
 // UserRepo es obligatorio.
 // Now es opcional; default time.Now.
 type Dependencies struct {
-	Logger     *slog.Logger
-	Signer     *jwtsign.Signer
-	UserRepo   domain.PlatformUserRepository
-	DeviceRepo domain.PushDeviceRepository
-	Now        func() time.Time
+	Logger      *slog.Logger
+	Signer      *jwtsign.Signer
+	UserRepo    domain.PlatformUserRepository
+	SessionRepo domain.SessionRepository
+	DeviceRepo  domain.PushDeviceRepository
+	Now         func() time.Time
 }
 
 // Mount registra los endpoints de identidad de plataforma en el router
@@ -57,9 +58,19 @@ func Mount(r chi.Router, deps Dependencies) {
 		logger: logger,
 		signer: deps.Signer,
 		loginUC: usecases.NewLoginUseCase(usecases.LoginDeps{
-			Users:  deps.UserRepo,
-			Signer: deps.Signer,
-			Now:    now,
+			Users:    deps.UserRepo,
+			Sessions: deps.SessionRepo,
+			Signer:   deps.Signer,
+			Now:      now,
+		}),
+		refreshUC: usecases.NewRefreshUseCase(usecases.RefreshDeps{
+			Users:    deps.UserRepo,
+			Sessions: deps.SessionRepo,
+			Signer:   deps.Signer,
+			Now:      now,
+		}),
+		logoutUC: usecases.NewLogoutUseCase(usecases.LogoutDeps{
+			Sessions: deps.SessionRepo,
 		}),
 		meUC: usecases.NewMeUseCase(usecases.MeDeps{Users: deps.UserRepo}),
 		listMembershipsUC: usecases.NewListMembershipsUseCase(usecases.ListMembershipsDeps{
@@ -80,6 +91,8 @@ func Mount(r chi.Router, deps Dependencies) {
 
 	r.Route("/auth", func(ar chi.Router) {
 		ar.Post("/login", h.login)
+		ar.Post("/refresh", h.refresh)
+		ar.Post("/logout", h.logout)
 		ar.Group(func(pr chi.Router) {
 			pr.Use(h.authMiddleware)
 			pr.Post("/switch-tenant", h.switchTenant)

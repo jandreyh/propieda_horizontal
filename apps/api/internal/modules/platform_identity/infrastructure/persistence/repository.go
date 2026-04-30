@@ -138,6 +138,86 @@ func (r *PlatformUserRepository) HasMembership(ctx context.Context, userID uuid.
 	return ok, nil
 }
 
+// SessionRepository envuelve sqlcgen para `platform_user_sessions`.
+type SessionRepository struct {
+	q *platformiddb.Queries
+}
+
+// NewSessionRepository construye el repo.
+func NewSessionRepository(pool *pgxpool.Pool) *SessionRepository {
+	return &SessionRepository{q: platformiddb.New(pool)}
+}
+
+var _ domain.SessionRepository = (*SessionRepository)(nil)
+
+// Create inserta una sesion con token_hash + expires_at.
+func (r *SessionRepository) Create(ctx context.Context, userID uuid.UUID, tokenHash string, userAgent *string, expiresAt time.Time) (*entities.PlatformSession, error) {
+	row, err := r.q.CreatePlatformUserSession(ctx, platformiddb.CreatePlatformUserSessionParams{
+		PlatformUserID: uuidToPg(userID),
+		TokenHash:      tokenHash,
+		IP:             nil,
+		UserAgent:      userAgent,
+		ExpiresAt:      timeToTs(expiresAt),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Create session: %w", err)
+	}
+	return rowToSession(row), nil
+}
+
+// FindByTokenHash devuelve la sesion activa con ese hash.
+func (r *SessionRepository) FindByTokenHash(ctx context.Context, tokenHash string) (*entities.PlatformSession, error) {
+	row, err := r.q.GetSessionByTokenHash(ctx, tokenHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("FindByTokenHash: %w", err)
+	}
+	return rowToSession(row), nil
+}
+
+// Revoke marca la sesion como revocada con un motivo.
+func (r *SessionRepository) Revoke(ctx context.Context, sessionID uuid.UUID, reason string) error {
+	if err := r.q.RevokeSession(ctx, platformiddb.RevokeSessionParams{
+		ID:               uuidToPg(sessionID),
+		RevocationReason: &reason,
+	}); err != nil {
+		return fmt.Errorf("Revoke: %w", err)
+	}
+	return nil
+}
+
+// RevokeAllForUser revoca todas las sesiones activas de un usuario.
+func (r *SessionRepository) RevokeAllForUser(ctx context.Context, userID uuid.UUID, reason string) error {
+	if err := r.q.RevokeAllUserSessions(ctx, platformiddb.RevokeAllUserSessionsParams{
+		PlatformUserID:   uuidToPg(userID),
+		RevocationReason: &reason,
+	}); err != nil {
+		return fmt.Errorf("RevokeAllForUser: %w", err)
+	}
+	return nil
+}
+
+func rowToSession(r platformiddb.PlatformUserSession) *entities.PlatformSession {
+	s := &entities.PlatformSession{
+		ID:               pgToUUID(r.ID),
+		PlatformUserID:   pgToUUID(r.PlatformUserID),
+		TokenHash:        r.TokenHash,
+		UserAgent:        r.UserAgent,
+		IssuedAt:         tsToTime(r.IssuedAt),
+		ExpiresAt:        tsToTime(r.ExpiresAt),
+		RevokedAt:        tsToPtrTime(r.RevokedAt),
+		RevocationReason: r.RevocationReason,
+		Status:           r.Status,
+	}
+	if r.ParentSessionID.Valid {
+		p := pgToUUID(r.ParentSessionID)
+		s.ParentSessionID = &p
+	}
+	return s
+}
+
 // PushDeviceRepository envuelve sqlcgen para `platform_push_devices`.
 type PushDeviceRepository struct {
 	q *platformiddb.Queries
