@@ -39,8 +39,6 @@ import (
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	finpersistence "github.com/saas-ph/api/internal/modules/finance/infrastructure/persistence"
 	finhttp "github.com/saas-ph/api/internal/modules/finance/interfaces/http"
-	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
-	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
 	incpersistence "github.com/saas-ph/api/internal/modules/incidents/infrastructure/persistence"
 	inchttp "github.com/saas-ph/api/internal/modules/incidents/interfaces/http"
 	notifpersistence "github.com/saas-ph/api/internal/modules/notifications/infrastructure/persistence"
@@ -48,6 +46,8 @@ import (
 	pkgusecases "github.com/saas-ph/api/internal/modules/packages/application/usecases"
 	pkgpersistence "github.com/saas-ph/api/internal/modules/packages/infrastructure/persistence"
 	pkghttp "github.com/saas-ph/api/internal/modules/packages/interfaces/http"
+	platformidpersistence "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence"
+	platformidhttp "github.com/saas-ph/api/internal/modules/platform_identity/interfaces/http"
 	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
 	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
 	penpersistence "github.com/saas-ph/api/internal/modules/penalties/infrastructure/persistence"
@@ -188,6 +188,20 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 		r.Get("/ready", handlers.Ready(centralPool))
 	}
 
+	// Modulo platform_identity (post-Fase 16 / ADR 0007). Vive en la DB
+	// central y NO se monta detras de tenant_resolver: la identidad es
+	// global y el current_tenant se selecciona via /auth/switch-tenant.
+	if centralPool != nil {
+		platformidhttp.Mount(r, platformidhttp.Dependencies{
+			Logger:      logger,
+			Signer:      signer,
+			UserRepo:    platformidpersistence.NewPlatformUserRepository(centralPool),
+			SessionRepo: platformidpersistence.NewSessionRepository(centralPool),
+			DeviceRepo:  platformidpersistence.NewPushDeviceRepository(centralPool),
+			Now:         time.Now,
+		})
+	}
+
 	// Rutas con tenant resuelto.
 	if registry != nil {
 		r.Group(func(tr chi.Router) {
@@ -202,14 +216,13 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 			}))
 			tr.Get("/tenant/ready", handlers.TenantReady)
 
-			// Modulo identity.
-			idhttp.Mount(tr, idhttp.Dependencies{
-				Logger:      logger,
-				Signer:      signer,
-				UserRepo:    idpersistence.NewUserRepository(),
-				SessionRepo: idpersistence.NewSessionRepository(),
-				Now:         time.Now,
-			})
+			// Modulo identity LEGACY — superseded por platform_identity
+			// (ADR 0007). Sus endpoints (/auth/*) los provee ahora
+			// platform_identity desde el router raiz, fuera del
+			// tenant_resolver. Las queries de identity legacy hacian
+			// JOIN con la tabla `users` que desaparece post-Fase 16.
+			//
+			// idhttp.Mount(tr, idhttp.Dependencies{...})  // disabled
 
 			// Modulo authorization.
 			authzhttp.Mount(tr, authzhttp.Dependencies{
