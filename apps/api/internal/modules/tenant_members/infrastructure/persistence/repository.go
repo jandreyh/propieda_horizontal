@@ -237,6 +237,37 @@ func (r *EnricherRepository) FindPlatformUserIDByCode(ctx context.Context, code 
 	return uuid.UUID(id.Bytes), names, last, email, nil
 }
 
+// UpsertCentralMembership inserta o actualiza el indice central de
+// memberships. Resuelve el tenantID del contexto.
+func (r *EnricherRepository) UpsertCentralMembership(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID, role, status string) error {
+	if status == "" {
+		status = "active"
+	}
+	_, err := r.central.Exec(ctx, `
+		INSERT INTO platform_user_memberships (platform_user_id, tenant_id, role, status)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (platform_user_id, tenant_id) DO UPDATE
+		SET role = EXCLUDED.role, status = EXCLUDED.status, updated_at = now()
+	`, userID, tenantID, role, status)
+	if err != nil {
+		return fmt.Errorf("upsert central membership: %w", err)
+	}
+	return nil
+}
+
+// BlockCentralMembership fija status='blocked' en central.
+func (r *EnricherRepository) BlockCentralMembership(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID) error {
+	_, err := r.central.Exec(ctx, `
+		UPDATE platform_user_memberships
+		SET status = 'blocked', updated_at = now()
+		WHERE platform_user_id = $1 AND tenant_id = $2
+	`, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("block central membership: %w", err)
+	}
+	return nil
+}
+
 // Hydrate hace UN query ANY($1::uuid[]) contra platform_users y mergea
 // los datos con los miembros. Si un id no resuelve queda con campos
 // vacios.

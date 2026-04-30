@@ -105,6 +105,14 @@ func (f *fakeEnricher) FindPlatformUserIDByCode(_ context.Context, code string) 
 	return id, u.Names, u.LastNames, u.Email, nil
 }
 
+func (f *fakeEnricher) UpsertCentralMembership(context.Context, uuid.UUID, uuid.UUID, string, string) error {
+	return nil
+}
+
+func (f *fakeEnricher) BlockCentralMembership(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
 func TestAddByCode_Success(t *testing.T) {
 	links := newFakeLinks()
 	uid := uuid.New()

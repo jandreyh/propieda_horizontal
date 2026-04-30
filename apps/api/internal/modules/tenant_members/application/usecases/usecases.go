@@ -13,6 +13,7 @@ import (
 	"github.com/saas-ph/api/internal/modules/tenant_members/application/dto"
 	"github.com/saas-ph/api/internal/modules/tenant_members/domain"
 	"github.com/saas-ph/api/internal/modules/tenant_members/domain/entities"
+	"github.com/saas-ph/api/internal/platform/tenantctx"
 )
 
 // Errores publicos.
@@ -87,11 +88,38 @@ func (uc *AddByCodeUseCase) Execute(ctx context.Context, req dto.AddMemberReques
 		}
 		return dto.MemberDTO{}, fmt.Errorf("%w: create link: %w", ErrInternal, err)
 	}
+
+	// Sincronizar la proyeccion central platform_user_memberships para que
+	// el JWT del usuario refleje la nueva membresia en su proximo login.
+	if tenantID, ok := tenantIDFromCtx(ctx); ok {
+		if err := uc.deps.Enricher.UpsertCentralMembership(ctx, puid, tenantID, role, "active"); err != nil {
+			// No revertimos el link local: el seeder/admin puede recrear
+			// la proyeccion despues. Loguear seria ideal pero el usecase
+			// no tiene logger inyectado — devolver error para que el
+			// handler 500 sea visible.
+			return dto.MemberDTO{}, fmt.Errorf("%w: sync central: %w", ErrInternal, err)
+		}
+	}
+
 	link.Names = names
 	link.LastNames = lastNames
 	link.Email = email
 	link.PublicCode = code
 	return toDTO(*link), nil
+}
+
+// tenantIDFromCtx extrae el tenant.ID resuelto por el middleware
+// TenantResolver. Devuelve "" si no esta en el contexto.
+func tenantIDFromCtx(ctx context.Context) (uuid.UUID, bool) {
+	t, err := tenantctx.FromCtx(ctx)
+	if err != nil || t == nil {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(t.ID)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 // ListDeps son las dependencias.
@@ -180,7 +208,8 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, idStr string, req dto.Upda
 
 // BlockDeps son las dependencias.
 type BlockDeps struct {
-	Links domain.LinkRepository
+	Links    domain.LinkRepository
+	Enricher domain.EnricherRepository
 }
 
 // BlockUseCase implementa POST /tenant-members/{id}/block.
@@ -189,17 +218,33 @@ type BlockUseCase struct{ deps BlockDeps }
 // NewBlockUseCase construye el usecase.
 func NewBlockUseCase(deps BlockDeps) *BlockUseCase { return &BlockUseCase{deps: deps} }
 
-// Execute marca status=blocked.
+// Execute marca status=blocked en el tenant + actualiza la proyeccion
+// central platform_user_memberships.
 func (uc *BlockUseCase) Execute(ctx context.Context, idStr string) error {
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		return ErrInvalidInput
+	}
+	// Antes de bloquear, leer el link para conocer el platform_user_id.
+	link, err := uc.deps.Links.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrLinkNotFound) {
+			return ErrLinkNotFound
+		}
+		return fmt.Errorf("%w: lookup: %w", ErrInternal, err)
 	}
 	if err := uc.deps.Links.Block(ctx, id); err != nil {
 		if errors.Is(err, domain.ErrLinkNotFound) {
 			return ErrLinkNotFound
 		}
 		return fmt.Errorf("%w: block: %w", ErrInternal, err)
+	}
+	if uc.deps.Enricher != nil {
+		if tenantID, ok := tenantIDFromCtx(ctx); ok {
+			if err := uc.deps.Enricher.BlockCentralMembership(ctx, link.PlatformUserID, tenantID); err != nil {
+				return fmt.Errorf("%w: sync central block: %w", ErrInternal, err)
+			}
+		}
 	}
 	return nil
 }

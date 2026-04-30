@@ -56,7 +56,8 @@ func Mount(r chi.Router, deps Dependencies) {
 			Links: deps.Links, Enricher: deps.Enricher,
 		}),
 		blockUC: usecases.NewBlockUseCase(usecases.BlockDeps{
-			Links: deps.Links,
+			Links:    deps.Links,
+			Enricher: deps.Enricher,
 		}),
 	}
 	r.Route("/tenant-members", func(tr chi.Router) {

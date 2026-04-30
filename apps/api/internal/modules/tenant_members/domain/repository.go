@@ -47,7 +47,9 @@ type UpdateLink struct {
 }
 
 // EnricherRepository abstrae la consulta a la DB central para hidratar
-// los datos del PlatformUser referenciado por un link.
+// los datos del PlatformUser referenciado por un link, y para mantener
+// la proyeccion `platform_user_memberships` en central sincronizada con
+// los `tenant_user_links` por tenant.
 type EnricherRepository interface {
 	// Hydrate completa Names/LastNames/Email/PublicCode de los miembros
 	// dado su platform_user_id. Hace UN solo query batch.
@@ -55,6 +57,13 @@ type EnricherRepository interface {
 	// FindPlatformUserIDByCode resuelve un public_code al user id en
 	// la DB central. Devuelve domain.ErrPlatformUserNotFound si no existe.
 	FindPlatformUserIDByCode(ctx context.Context, code string) (uuid.UUID, string, string, string, error)
+	// UpsertCentralMembership inserta o actualiza la fila
+	// `platform_user_memberships` en central. Necesario para que el JWT
+	// de la persona refleje su nueva membresia tras AddByCode.
+	UpsertCentralMembership(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID, role, status string) error
+	// BlockCentralMembership marca status='blocked' en central. Se llama
+	// junto a Block() local para mantener la proyeccion sincronizada.
+	BlockCentralMembership(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID) error
 }
 
 // ErrPlatformUserNotFound se emite cuando el public_code no resuelve.

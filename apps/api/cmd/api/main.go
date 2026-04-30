@@ -181,6 +181,7 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recovery(logger))
 	r.Use(middleware.Logging(logger))
+	r.Use(middleware.CORS(middleware.CORSConfig{}))
 	r.Use(middleware.RateLimit(middleware.RateLimitConfig{
 		RequestsPerSecond: 50,
 		Burst:             100,
