@@ -10,6 +10,83 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountingEntry struct {
+	ID          pgtype.UUID
+	PeriodYear  int32
+	PeriodMonth int32
+	PostedAt    pgtype.Timestamptz
+	SourceType  string
+	SourceID    pgtype.UUID
+	Description *string
+	Posted      bool
+	Sealed      bool
+	SealedAt    pgtype.Timestamptz
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type AccountingEntryLine struct {
+	ID           pgtype.UUID
+	EntryID      pgtype.UUID
+	AccountID    pgtype.UUID
+	CostCenterID pgtype.UUID
+	Debit        pgtype.Numeric
+	Credit       pgtype.Numeric
+	Description  *string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type Act struct {
+	ID           pgtype.UUID
+	AssemblyID   pgtype.UUID
+	BodyMd       string
+	PdfUrl       *string
+	PdfHash      *string
+	SealedAt     pgtype.Timestamptz
+	ArchiveUntil pgtype.Date
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type ActSignature struct {
+	ID              pgtype.UUID
+	ActID           pgtype.UUID
+	SignerUserID    pgtype.UUID
+	Role            string
+	SignedAt        pgtype.Timestamptz
+	SignatureMethod string
+	EvidenceHash    string
+	ClientIp        *netip.Addr
+	UserAgent       *string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedBy       pgtype.UUID
+	DeletedBy       pgtype.UUID
+	Version         int32
+}
+
 type Announcement struct {
 	ID                pgtype.UUID
 	Title             string
@@ -53,6 +130,152 @@ type AnnouncementAudience struct {
 	DeletedBy      pgtype.UUID
 }
 
+type AssembliesOutboxEvent struct {
+	ID            pgtype.UUID
+	AggregateID   pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
+}
+
+type Assembly struct {
+	ID                pgtype.UUID
+	Name              string
+	AssemblyType      string
+	ScheduledAt       pgtype.Timestamptz
+	VotingMode        string
+	QuorumRequiredPct pgtype.Numeric
+	Location          *string
+	Notes             *string
+	StartedAt         pgtype.Timestamptz
+	ClosedAt          pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type AssemblyAttendance struct {
+	ID                  pgtype.UUID
+	AssemblyID          pgtype.UUID
+	UnitID              pgtype.UUID
+	AttendeeUserID      pgtype.UUID
+	RepresentedByUserID pgtype.UUID
+	CoefficientAtEvent  pgtype.Numeric
+	ArrivalAt           pgtype.Timestamptz
+	DepartureAt         pgtype.Timestamptz
+	IsRemote            bool
+	HasVotingRight      bool
+	Notes               *string
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	DeletedBy           pgtype.UUID
+	Version             int32
+}
+
+type AssemblyCall struct {
+	ID          pgtype.UUID
+	AssemblyID  pgtype.UUID
+	PublishedAt pgtype.Timestamptz
+	Channels    []byte
+	Agenda      []byte
+	BodyMd      *string
+	PublishedBy pgtype.UUID
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type AssemblyMotion struct {
+	ID           pgtype.UUID
+	AssemblyID   pgtype.UUID
+	Title        string
+	Description  *string
+	DecisionType string
+	VotingMethod string
+	Options      []byte
+	OpensAt      pgtype.Timestamptz
+	ClosesAt     pgtype.Timestamptz
+	Results      []byte
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type AssemblyProxy struct {
+	ID            pgtype.UUID
+	AssemblyID    pgtype.UUID
+	GrantorUserID pgtype.UUID
+	ProxyUserID   pgtype.UUID
+	UnitID        pgtype.UUID
+	DocumentUrl   *string
+	DocumentHash  *string
+	ValidatedAt   pgtype.Timestamptz
+	ValidatedBy   pgtype.UUID
+	RevokedAt     pgtype.Timestamptz
+	Status        string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	DeletedAt     pgtype.Timestamptz
+	CreatedBy     pgtype.UUID
+	UpdatedBy     pgtype.UUID
+	DeletedBy     pgtype.UUID
+	Version       int32
+}
+
+type AuditLog struct {
+	ID          pgtype.UUID
+	ActorUserID pgtype.UUID
+	Action      string
+	EntityType  string
+	EntityID    pgtype.UUID
+	Before      []byte
+	After       []byte
+	Ip          *netip.Addr
+	UserAgent   *string
+	RequestID   *string
+	OccurredAt  pgtype.Timestamptz
+	Severity    string
+}
+
+type BillingAccount struct {
+	ID           pgtype.UUID
+	UnitID       pgtype.UUID
+	HolderUserID pgtype.UUID
+	OpenedAt     pgtype.Timestamptz
+	ClosedAt     pgtype.Timestamptz
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
 type BlacklistedPerson struct {
 	ID               pgtype.UUID
 	DocumentType     string
@@ -70,6 +293,355 @@ type BlacklistedPerson struct {
 	UpdatedBy        pgtype.UUID
 	DeletedBy        pgtype.UUID
 	Version          int32
+}
+
+type Charge struct {
+	ID               pgtype.UUID
+	BillingAccountID pgtype.UUID
+	Concept          string
+	PeriodYear       *int32
+	PeriodMonth      *int32
+	Amount           pgtype.Numeric
+	Balance          pgtype.Numeric
+	DueDate          pgtype.Date
+	CostCenterID     pgtype.UUID
+	AccountID        pgtype.UUID
+	IdempotencyKey   *string
+	Description      *string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+	Version          int32
+}
+
+type ChargeItem struct {
+	ID          pgtype.UUID
+	ChargeID    pgtype.UUID
+	Description string
+	Amount      pgtype.Numeric
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type ChartOfAccount struct {
+	ID          pgtype.UUID
+	Code        string
+	Name        string
+	AccountType string
+	ParentID    pgtype.UUID
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type CommonArea struct {
+	ID                  pgtype.UUID
+	Code                string
+	Name                string
+	Kind                string
+	MaxCapacity         *int32
+	OpeningTime         pgtype.Time
+	ClosingTime         pgtype.Time
+	SlotDurationMinutes int32
+	CostPerUse          pgtype.Numeric
+	SecurityDeposit     pgtype.Numeric
+	RequiresApproval    bool
+	IsActive            bool
+	Description         *string
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	DeletedBy           pgtype.UUID
+	Version             int32
+}
+
+type CommonAreaRule struct {
+	ID           pgtype.UUID
+	CommonAreaID pgtype.UUID
+	RuleKey      string
+	RuleValue    []byte
+	Description  *string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type CostCenter struct {
+	ID        pgtype.UUID
+	Code      string
+	Name      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
+}
+
+type FinanceOutboxEvent struct {
+	ID            pgtype.UUID
+	AggregateID   pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
+}
+
+type Incident struct {
+	ID               pgtype.UUID
+	IncidentType     string
+	Severity         string
+	Title            string
+	Description      string
+	ReportedByUserID pgtype.UUID
+	ReportedAt       pgtype.Timestamptz
+	StructureID      pgtype.UUID
+	LocationDetail   *string
+	AssignedToUserID pgtype.UUID
+	AssignedAt       pgtype.Timestamptz
+	StartedAt        pgtype.Timestamptz
+	ResolvedAt       pgtype.Timestamptz
+	ClosedAt         pgtype.Timestamptz
+	CancelledAt      pgtype.Timestamptz
+	ResolutionNotes  *string
+	Escalated        bool
+	SlaAssignDueAt   pgtype.Timestamptz
+	SlaResolveDueAt  pgtype.Timestamptz
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+	Version          int32
+}
+
+type IncidentAssignment struct {
+	ID               pgtype.UUID
+	IncidentID       pgtype.UUID
+	AssignedToUserID pgtype.UUID
+	AssignedByUserID pgtype.UUID
+	AssignedAt       pgtype.Timestamptz
+	UnassignedAt     pgtype.Timestamptz
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+}
+
+type IncidentAttachment struct {
+	ID         pgtype.UUID
+	IncidentID pgtype.UUID
+	Url        string
+	MimeType   string
+	SizeBytes  int64
+	UploadedBy pgtype.UUID
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	UpdatedBy  pgtype.UUID
+	DeletedBy  pgtype.UUID
+}
+
+type IncidentOutboxEvent struct {
+	ID            pgtype.UUID
+	IncidentID    pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
+}
+
+type IncidentStatusHistory struct {
+	ID                   pgtype.UUID
+	IncidentID           pgtype.UUID
+	FromStatus           *string
+	ToStatus             string
+	TransitionedByUserID pgtype.UUID
+	TransitionedAt       pgtype.Timestamptz
+	Notes                *string
+	Status               string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	CreatedBy            pgtype.UUID
+	UpdatedBy            pgtype.UUID
+}
+
+type LateFeeRun struct {
+	ID             pgtype.UUID
+	PeriodYear     int32
+	PeriodMonth    int32
+	RateApplied    pgtype.Numeric
+	ExecutedAt     pgtype.Timestamptz
+	ExecutedBy     pgtype.UUID
+	ChargesCreated int32
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+	DeletedBy      pgtype.UUID
+	Version        int32
+}
+
+type NotificationConsent struct {
+	ID              pgtype.UUID
+	UserID          pgtype.UUID
+	Channel         string
+	ConsentedAt     pgtype.Timestamptz
+	RevokedAt       pgtype.Timestamptz
+	ConsentProofUrl *string
+	LegalBasis      *string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedBy       pgtype.UUID
+	DeletedBy       pgtype.UUID
+	Version         int32
+}
+
+type NotificationDelivery struct {
+	ID                pgtype.UUID
+	OutboxID          pgtype.UUID
+	ProviderName      string
+	ProviderMessageID *string
+	ProviderStatus    *string
+	DeliveredAt       pgtype.Timestamptz
+	FailureReason     *string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+}
+
+type NotificationOutbox struct {
+	ID              pgtype.UUID
+	EventType       string
+	RecipientUserID pgtype.UUID
+	Channel         string
+	Payload         []byte
+	IdempotencyKey  string
+	ScheduledAt     pgtype.Timestamptz
+	SentAt          pgtype.Timestamptz
+	Attempts        int32
+	LastError       *string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedBy       pgtype.UUID
+	DeletedBy       pgtype.UUID
+	Version         int32
+}
+
+type NotificationPreference struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	EventType string
+	Channel   string
+	Enabled   bool
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
+}
+
+type NotificationProviderConfig struct {
+	ID           pgtype.UUID
+	Channel      string
+	ProviderName string
+	Config       []byte
+	IsActive     bool
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type NotificationPushToken struct {
+	ID         pgtype.UUID
+	UserID     pgtype.UUID
+	Platform   string
+	Token      string
+	LastSeenAt pgtype.Timestamptz
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	UpdatedBy  pgtype.UUID
+	DeletedBy  pgtype.UUID
+	Version    int32
+}
+
+type NotificationTemplate struct {
+	ID                  pgtype.UUID
+	EventType           string
+	Channel             string
+	Locale              string
+	Subject             *string
+	BodyTemplate        string
+	ProviderTemplateRef *string
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	DeletedBy           pgtype.UUID
+	Version             int32
 }
 
 type Package struct {
@@ -140,6 +712,374 @@ type PackageOutboxEvent struct {
 	LastError     *string
 }
 
+type PaidInFullCertificate struct {
+	ID             pgtype.UUID
+	UnitID         pgtype.UUID
+	IssuedAt       pgtype.Timestamptz
+	ValidUntil     pgtype.Timestamptz
+	PdfUrl         *string
+	PdfHash        *string
+	SignedByUserID pgtype.UUID
+	Notes          *string
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+	DeletedBy      pgtype.UUID
+	Version        int32
+}
+
+type ParkingAssignment struct {
+	ID               pgtype.UUID
+	ParkingSpaceID   pgtype.UUID
+	UnitID           pgtype.UUID
+	VehicleID        pgtype.UUID
+	AssignedByUserID pgtype.UUID
+	SinceDate        pgtype.Date
+	UntilDate        pgtype.Date
+	Notes            *string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedBy        pgtype.UUID
+	DeletedBy        pgtype.UUID
+	Version          int32
+}
+
+type ParkingAssignmentHistory struct {
+	ID              pgtype.UUID
+	ParkingSpaceID  pgtype.UUID
+	UnitID          pgtype.UUID
+	AssignmentID    pgtype.UUID
+	SinceDate       pgtype.Date
+	UntilDate       pgtype.Date
+	ClosedReason    *string
+	SnapshotPayload []byte
+	RecordedAt      pgtype.Timestamptz
+	RecordedBy      pgtype.UUID
+}
+
+type ParkingLotteryResult struct {
+	ID             pgtype.UUID
+	LotteryRunID   pgtype.UUID
+	UnitID         pgtype.UUID
+	ParkingSpaceID pgtype.UUID
+	Position       int32
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+	DeletedBy      pgtype.UUID
+	Version        int32
+}
+
+type ParkingLotteryRun struct {
+	ID         pgtype.UUID
+	Name       string
+	SeedHash   string
+	Criteria   []byte
+	ExecutedAt pgtype.Timestamptz
+	ExecutedBy pgtype.UUID
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	UpdatedBy  pgtype.UUID
+	DeletedBy  pgtype.UUID
+	Version    int32
+}
+
+type ParkingOutboxEvent struct {
+	ID            pgtype.UUID
+	AggregateID   pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
+}
+
+type ParkingRule struct {
+	ID          pgtype.UUID
+	RuleKey     string
+	RuleValue   []byte
+	Description *string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type ParkingSpace struct {
+	ID          pgtype.UUID
+	Code        string
+	Type        string
+	StructureID pgtype.UUID
+	Level       *string
+	Zone        *string
+	MonthlyFee  pgtype.Numeric
+	IsVisitor   bool
+	Notes       *string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type ParkingVisitorReservation struct {
+	ID              pgtype.UUID
+	ParkingSpaceID  pgtype.UUID
+	UnitID          pgtype.UUID
+	RequestedBy     pgtype.UUID
+	VisitorName     string
+	VisitorDocument *string
+	VehiclePlate    *string
+	SlotStartAt     pgtype.Timestamptz
+	SlotEndAt       pgtype.Timestamptz
+	IdempotencyKey  *string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedBy       pgtype.UUID
+	DeletedBy       pgtype.UUID
+	Version         int32
+}
+
+type Payment struct {
+	ID                pgtype.UUID
+	BillingAccountID  pgtype.UUID
+	PayerUserID       pgtype.UUID
+	MethodCode        string
+	Gateway           *string
+	GatewayTxnID      *string
+	IdempotencyKey    *string
+	Amount            pgtype.Numeric
+	Currency          string
+	UnallocatedAmount pgtype.Numeric
+	CapturedAt        pgtype.Timestamptz
+	SettledAt         pgtype.Timestamptz
+	FailureReason     *string
+	ReceiptNumber     *string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type PaymentAllocation struct {
+	ID        pgtype.UUID
+	PaymentID pgtype.UUID
+	ChargeID  pgtype.UUID
+	Amount    pgtype.Numeric
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
+}
+
+type PaymentGatewayConfig struct {
+	ID            pgtype.UUID
+	Gateway       string
+	MerchantID    *string
+	SecretsKmsRef *string
+	Enabled       bool
+	Config        []byte
+	Status        string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	DeletedAt     pgtype.Timestamptz
+	CreatedBy     pgtype.UUID
+	UpdatedBy     pgtype.UUID
+	DeletedBy     pgtype.UUID
+	Version       int32
+}
+
+type PaymentMethod struct {
+	ID        pgtype.UUID
+	Code      string
+	Name      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+	DeletedBy pgtype.UUID
+	Version   int32
+}
+
+type PaymentReversal struct {
+	ID          pgtype.UUID
+	PaymentID   pgtype.UUID
+	Reason      string
+	RequestedBy pgtype.UUID
+	RequestedAt pgtype.Timestamptz
+	ApprovedBy  pgtype.UUID
+	ApprovedAt  pgtype.Timestamptz
+	CompletedAt pgtype.Timestamptz
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedBy   pgtype.UUID
+	DeletedBy   pgtype.UUID
+	Version     int32
+}
+
+type PaymentWebhookIdempotency struct {
+	ID             pgtype.UUID
+	Gateway        string
+	IdempotencyKey string
+	PayloadHash    *string
+	ReceivedAt     pgtype.Timestamptz
+	ProcessedAt    pgtype.Timestamptz
+	PaymentID      pgtype.UUID
+	LastError      *string
+}
+
+type Penalty struct {
+	ID                      pgtype.UUID
+	CatalogID               pgtype.UUID
+	DebtorUserID            pgtype.UUID
+	UnitID                  pgtype.UUID
+	SourceIncidentID        pgtype.UUID
+	SanctionType            string
+	Amount                  pgtype.Numeric
+	Reason                  string
+	ImposedByUserID         pgtype.UUID
+	NotifiedAt              pgtype.Timestamptz
+	AppealDeadlineAt        pgtype.Timestamptz
+	ConfirmedAt             pgtype.Timestamptz
+	SettledAt               pgtype.Timestamptz
+	DismissedAt             pgtype.Timestamptz
+	CancelledAt             pgtype.Timestamptz
+	RequiresCouncilApproval bool
+	CouncilApprovedByUserID pgtype.UUID
+	CouncilApprovedAt       pgtype.Timestamptz
+	IdempotencyKey          *string
+	Status                  string
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	DeletedAt               pgtype.Timestamptz
+	CreatedBy               pgtype.UUID
+	UpdatedBy               pgtype.UUID
+	DeletedBy               pgtype.UUID
+	Version                 int32
+}
+
+type PenaltyAppeal struct {
+	ID                pgtype.UUID
+	PenaltyID         pgtype.UUID
+	SubmittedByUserID pgtype.UUID
+	SubmittedAt       pgtype.Timestamptz
+	Grounds           string
+	ResolvedByUserID  pgtype.UUID
+	ResolvedAt        pgtype.Timestamptz
+	Resolution        *string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type PenaltyCatalog struct {
+	ID                       pgtype.UUID
+	Code                     string
+	Name                     string
+	Description              *string
+	DefaultSanctionType      string
+	BaseAmount               pgtype.Numeric
+	RecurrenceMultiplier     pgtype.Numeric
+	RecurrenceCapMultiplier  pgtype.Numeric
+	RequiresCouncilThreshold pgtype.Numeric
+	Status                   string
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+	DeletedAt                pgtype.Timestamptz
+	CreatedBy                pgtype.UUID
+	UpdatedBy                pgtype.UUID
+	DeletedBy                pgtype.UUID
+	Version                  int32
+}
+
+type PenaltyOutboxEvent struct {
+	ID             pgtype.UUID
+	PenaltyID      pgtype.UUID
+	EventType      string
+	Payload        []byte
+	IdempotencyKey *string
+	CreatedAt      pgtype.Timestamptz
+	NextAttemptAt  pgtype.Timestamptz
+	Attempts       int32
+	DeliveredAt    pgtype.Timestamptz
+	LastError      *string
+}
+
+type PenaltyStatusHistory struct {
+	ID                   pgtype.UUID
+	PenaltyID            pgtype.UUID
+	FromStatus           *string
+	ToStatus             string
+	TransitionedByUserID pgtype.UUID
+	TransitionedAt       pgtype.Timestamptz
+	Notes                *string
+	Status               string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	CreatedBy            pgtype.UUID
+	UpdatedBy            pgtype.UUID
+}
+
+type PeriodClosure struct {
+	ID           pgtype.UUID
+	PeriodYear   int32
+	PeriodMonth  int32
+	ClosedSoftAt pgtype.Timestamptz
+	ClosedHardAt pgtype.Timestamptz
+	ClosedBy     pgtype.UUID
+	Notes        *string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
 type Permission struct {
 	ID          pgtype.UUID
 	Namespace   string
@@ -151,6 +1091,210 @@ type Permission struct {
 	CreatedBy   pgtype.UUID
 	UpdatedBy   pgtype.UUID
 	DeletedBy   pgtype.UUID
+}
+
+type PqrsAttachment struct {
+	ID         pgtype.UUID
+	TicketID   pgtype.UUID
+	ResponseID pgtype.UUID
+	Url        string
+	MimeType   string
+	SizeBytes  int64
+	UploadedBy pgtype.UUID
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	UpdatedBy  pgtype.UUID
+	DeletedBy  pgtype.UUID
+}
+
+type PqrsCategory struct {
+	ID                    pgtype.UUID
+	Code                  string
+	Name                  string
+	DefaultAssigneeRoleID pgtype.UUID
+	Status                string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	DeletedAt             pgtype.Timestamptz
+	CreatedBy             pgtype.UUID
+	UpdatedBy             pgtype.UUID
+	DeletedBy             pgtype.UUID
+	Version               int32
+}
+
+type PqrsOutboxEvent struct {
+	ID             pgtype.UUID
+	TicketID       pgtype.UUID
+	EventType      string
+	Payload        []byte
+	IdempotencyKey *string
+	CreatedAt      pgtype.Timestamptz
+	NextAttemptAt  pgtype.Timestamptz
+	Attempts       int32
+	DeliveredAt    pgtype.Timestamptz
+	LastError      *string
+}
+
+type PqrsResponse struct {
+	ID                pgtype.UUID
+	TicketID          pgtype.UUID
+	ResponseType      string
+	Body              string
+	RespondedByUserID pgtype.UUID
+	RespondedAt       pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type PqrsSlaAlert struct {
+	ID        pgtype.UUID
+	TicketID  pgtype.UUID
+	AlertType string
+	AlertedAt pgtype.Timestamptz
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	UpdatedBy pgtype.UUID
+}
+
+type PqrsStatusHistory struct {
+	ID                   pgtype.UUID
+	TicketID             pgtype.UUID
+	FromStatus           *string
+	ToStatus             string
+	TransitionedByUserID pgtype.UUID
+	TransitionedAt       pgtype.Timestamptz
+	Notes                *string
+	Status               string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	CreatedBy            pgtype.UUID
+	UpdatedBy            pgtype.UUID
+}
+
+type PqrsTicket struct {
+	ID                pgtype.UUID
+	TicketYear        int32
+	SerialNumber      int32
+	PqrType           string
+	CategoryID        pgtype.UUID
+	Subject           string
+	Body              string
+	RequesterUserID   pgtype.UUID
+	AssignedToUserID  pgtype.UUID
+	AssignedAt        pgtype.Timestamptz
+	RespondedAt       pgtype.Timestamptz
+	ClosedAt          pgtype.Timestamptz
+	EscalatedAt       pgtype.Timestamptz
+	CancelledAt       pgtype.Timestamptz
+	SlaDueAt          pgtype.Timestamptz
+	RequesterRating   *int32
+	RequesterFeedback *string
+	IsAnonymous       bool
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type Reservation struct {
+	ID                pgtype.UUID
+	CommonAreaID      pgtype.UUID
+	UnitID            pgtype.UUID
+	RequestedByUserID pgtype.UUID
+	SlotStartAt       pgtype.Timestamptz
+	SlotEndAt         pgtype.Timestamptz
+	AttendeesCount    *int32
+	Cost              pgtype.Numeric
+	SecurityDeposit   pgtype.Numeric
+	DepositRefunded   bool
+	QrCodeHash        *string
+	IdempotencyKey    *string
+	Notes             *string
+	ApprovedBy        pgtype.UUID
+	ApprovedAt        pgtype.Timestamptz
+	CancelledBy       pgtype.UUID
+	CancelledAt       pgtype.Timestamptz
+	ConsumedAt        pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type ReservationBlackout struct {
+	ID           pgtype.UUID
+	CommonAreaID pgtype.UUID
+	FromAt       pgtype.Timestamptz
+	ToAt         pgtype.Timestamptz
+	Reason       string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedBy    pgtype.UUID
+	DeletedBy    pgtype.UUID
+	Version      int32
+}
+
+type ReservationPayment struct {
+	ID                pgtype.UUID
+	ReservationID     pgtype.UUID
+	PaymentID         pgtype.UUID
+	VoucherUrl        *string
+	Amount            pgtype.Numeric
+	IsSecurityDeposit bool
+	PaidAt            pgtype.Timestamptz
+	RefundedAt        pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedBy         pgtype.UUID
+	DeletedBy         pgtype.UUID
+	Version           int32
+}
+
+type ReservationStatusHistory struct {
+	ID            pgtype.UUID
+	ReservationID pgtype.UUID
+	FromStatus    *string
+	ToStatus      string
+	ChangedBy     pgtype.UUID
+	Reason        *string
+	ChangedAt     pgtype.Timestamptz
+}
+
+type ReservationsOutboxEvent struct {
+	ID            pgtype.UUID
+	AggregateID   pgtype.UUID
+	EventType     string
+	Payload       []byte
+	CreatedAt     pgtype.Timestamptz
+	NextAttemptAt pgtype.Timestamptz
+	Attempts      int32
+	DeliveredAt   pgtype.Timestamptz
+	LastError     *string
 }
 
 type ResidentialStructure struct {
@@ -226,6 +1370,20 @@ type TenantSetting struct {
 	Version     int32
 }
 
+type TenantUserLink struct {
+	ID             pgtype.UUID
+	PlatformUserID pgtype.UUID
+	Role           string
+	PrimaryUnitID  pgtype.UUID
+	CarteraStatus  *string
+	FechaIngreso   pgtype.Date
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+	Version        int32
+}
+
 type Unit struct {
 	ID          pgtype.UUID
 	StructureID pgtype.UUID
@@ -295,43 +1453,6 @@ type UnitVehicleAssignment struct {
 	Version   int32
 }
 
-type User struct {
-	ID                  pgtype.UUID
-	DocumentType        string
-	DocumentNumber      string
-	Names               string
-	LastNames           string
-	Email               *string
-	Phone               *string
-	PasswordHash        string
-	MfaSecret           *string
-	MfaEnrolledAt       pgtype.Timestamptz
-	FailedLoginAttempts int32
-	LockedUntil         pgtype.Timestamptz
-	LastLoginAt         pgtype.Timestamptz
-	Status              string
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-	DeletedAt           pgtype.Timestamptz
-	CreatedBy           pgtype.UUID
-	UpdatedBy           pgtype.UUID
-	DeletedBy           pgtype.UUID
-	Version             int32
-}
-
-type UserMfaRecoveryCode struct {
-	ID        pgtype.UUID
-	UserID    pgtype.UUID
-	CodeHash  string
-	UsedAt    pgtype.Timestamptz
-	Status    string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
-	CreatedBy pgtype.UUID
-	UpdatedBy pgtype.UUID
-	Version   int32
-}
-
 type UserRoleAssignment struct {
 	ID               pgtype.UUID
 	UserID           pgtype.UUID
@@ -340,25 +1461,6 @@ type UserRoleAssignment struct {
 	ScopeID          pgtype.UUID
 	GrantedBy        pgtype.UUID
 	GrantedAt        pgtype.Timestamptz
-	RevokedAt        pgtype.Timestamptz
-	RevocationReason *string
-	Status           string
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	CreatedBy        pgtype.UUID
-	UpdatedBy        pgtype.UUID
-	Version          int32
-}
-
-type UserSession struct {
-	ID               pgtype.UUID
-	UserID           pgtype.UUID
-	TokenHash        string
-	ParentSessionID  pgtype.UUID
-	Ip               *netip.Addr
-	UserAgent        *string
-	IssuedAt         pgtype.Timestamptz
-	ExpiresAt        pgtype.Timestamptz
 	RevokedAt        pgtype.Timestamptz
 	RevocationReason *string
 	Status           string
@@ -430,4 +1532,40 @@ type VisitorPreRegistration struct {
 	UpdatedBy             pgtype.UUID
 	DeletedBy             pgtype.UUID
 	Version               int32
+}
+
+type Vote struct {
+	ID              pgtype.UUID
+	MotionID        pgtype.UUID
+	VoterUserID     pgtype.UUID
+	UnitID          pgtype.UUID
+	CoefficientUsed pgtype.Numeric
+	Option          string
+	CastAt          pgtype.Timestamptz
+	PrevVoteHash    *string
+	VoteHash        string
+	Nonce           string
+	IsProxyVote     bool
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedBy       pgtype.UUID
+	DeletedBy       pgtype.UUID
+	Version         int32
+}
+
+type VoteEvidence struct {
+	ID           pgtype.UUID
+	VoteID       pgtype.UUID
+	MotionID     pgtype.UUID
+	PrevVoteHash *string
+	VoteHash     string
+	PayloadJson  []byte
+	ClientIp     *netip.Addr
+	UserAgent    *string
+	NtpOffsetMs  *int32
+	SealedAt     pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
 }
