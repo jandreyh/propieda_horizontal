@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Tenant Members (Fase 16)
+  version: 1.0.0
+  description: |
+    Vinculacion de personas a un conjunto via su `public_code`. Estos
+    endpoints viven detras del tenant_resolver: el tenant ya esta resuelto
+    cuando entran. Operan contra `tenant_user_links` del tenant DB y
+    consultan central para hidratar nombres/email/codigo.
+
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /tenant-members:
+    post:
+      summary: Vincula una persona al conjunto via public_code
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMemberRequest' }
+      responses:
+        '201':
+          description: Link creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { description: Input invalido }
+        '404': { description: public_code no existe en plataforma }
+        '409': { description: Usuario ya vinculado a este tenant }
+
+    get:
+      summary: Lista los miembros del tenant
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListMembersResponse' }
+
+  /tenant-members/{id}:
+    put:
+      summary: Actualiza role/unit del miembro (optimistic lock)
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMemberRequest' }
+      responses:
+        '200':
+          description: Actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '404': { description: Link no existe }
+        '409': { description: version mismatch (resolver y reintentar) }
+
+  /tenant-members/{id}/block:
+    post:
+      summary: Marca el link como blocked en este conjunto
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Bloqueado }
+        '404': { description: Link no existe }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AddMemberRequest:
+      type: object
+      required: [public_code, role]
+      properties:
+        public_code: { type: string, example: 'DEMO-ADMN-0001' }
+        role:
+          type: string
+          enum: [tenant_admin, accountant, guard, resident, owner, council_member]
+        primary_unit_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateMemberRequest:
+      type: object
+      required: [role, version]
+      properties:
+        role:
+          type: string
+          enum: [tenant_admin, accountant, guard, resident, owner, council_member]
+        primary_unit_id:
+          type: string
+          format: uuid
+          nullable: true
+        version: { type: integer }
+
+    Member:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        platform_user_id: { type: string, format: uuid }
+        names: { type: string }
+        last_names: { type: string }
+        email: { type: string }
+        public_code: { type: string }
+        role: { type: string }
+        primary_unit_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [active, blocked] }
+        version: { type: integer }
+
+    ListMembersResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Member' }
