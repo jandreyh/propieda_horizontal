@@ -72,6 +72,12 @@ func Mount(r chi.Router, deps Dependencies) {
 		logoutUC: usecases.NewLogoutUseCase(usecases.LogoutDeps{
 			Sessions: deps.SessionRepo,
 		}),
+		mfaVerifyUC: usecases.NewMFAVerifyUseCase(usecases.MFAVerifyDeps{
+			Users:    deps.UserRepo,
+			Sessions: deps.SessionRepo,
+			Signer:   deps.Signer,
+			Now:      now,
+		}),
 		meUC: usecases.NewMeUseCase(usecases.MeDeps{Users: deps.UserRepo}),
 		listMembershipsUC: usecases.NewListMembershipsUseCase(usecases.ListMembershipsDeps{
 			Users: deps.UserRepo,
@@ -91,6 +97,7 @@ func Mount(r chi.Router, deps Dependencies) {
 
 	r.Route("/auth", func(ar chi.Router) {
 		ar.Post("/login", h.login)
+		ar.Post("/mfa/verify", h.mfaVerify)
 		ar.Post("/refresh", h.refresh)
 		ar.Post("/logout", h.logout)
 		ar.Group(func(pr chi.Router) {

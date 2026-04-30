@@ -30,6 +30,7 @@ type handlers struct {
 	removeDeviceUC    *usecases.RemovePushDeviceUseCase
 	refreshUC         *usecases.RefreshUseCase
 	logoutUC          *usecases.LogoutUseCase
+	mfaVerifyUC       *usecases.MFAVerifyUseCase
 }
 
 // authContextKey es la clave para colocar las claims del access token
@@ -76,6 +77,20 @@ func (h *handlers) memberships(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.listMembershipsUC.Execute(r.Context(), claims.Subject)
+	if err != nil {
+		h.writeUseCaseError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *handlers) mfaVerify(w http.ResponseWriter, r *http.Request) {
+	var req dto.MFAVerifyRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		apperrors.Write(w, apperrors.BadRequest(err.Error()).WithInstance(r.URL.Path))
+		return
+	}
+	resp, err := h.mfaVerifyUC.Execute(r.Context(), req)
 	if err != nil {
 		h.writeUseCaseError(w, r, err)
 		return
@@ -234,6 +249,10 @@ func (h *handlers) writeUseCaseError(w http.ResponseWriter, r *http.Request, err
 		apperrors.Write(w, apperrors.BadRequest("invalid push device").WithInstance(r.URL.Path))
 	case errors.Is(err, usecases.ErrInvalidRefresh):
 		apperrors.Write(w, apperrors.Unauthorized("invalid refresh token").WithInstance(r.URL.Path))
+	case errors.Is(err, usecases.ErrInvalidPreAuth):
+		apperrors.Write(w, apperrors.Unauthorized("invalid pre-auth token").WithInstance(r.URL.Path))
+	case errors.Is(err, usecases.ErrInvalidMFACode):
+		apperrors.Write(w, apperrors.Unauthorized("invalid mfa code").WithInstance(r.URL.Path))
 	default:
 		if h.logger != nil {
 			h.logger.ErrorContext(r.Context(), "platform_identity: internal error",
