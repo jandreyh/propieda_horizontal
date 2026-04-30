@@ -1,0 +1,107 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Superadmin (Fase 16)
+  version: 1.0.0
+  description: |
+    Endpoints para el rol `platform_superadmin`. Crea conjuntos
+    (provisioning sincronico), lista tenants, busca usuarios cross-tenant
+    y administra entidades administradoras.
+
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /superadmin/tenants:
+    post:
+      summary: Crea un nuevo conjunto (DB + migraciones + admin link)
+      tags: [tenants]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTenantResponse'
+        '400':
+          description: Input invalido
+        '403':
+          description: Rol platform_superadmin requerido
+    get:
+      summary: Lista los tenants no-archived
+      tags: [tenants]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTenantsResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateTenantRequest:
+      type: object
+      required: [slug, display_name, admin]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        administrator_id: { type: string, format: uuid, nullable: true }
+        plan: { type: string, default: pilot }
+        country: { type: string, default: CO }
+        currency: { type: string, default: COP }
+        timezone: { type: string, default: America/Bogota }
+        expected_units: { type: integer, nullable: true }
+        admin: { $ref: '#/components/schemas/AdminInput' }
+
+    AdminInput:
+      type: object
+      required: [email, document_type, document_number, names, last_names, password]
+      properties:
+        email: { type: string, format: email }
+        document_type: { type: string, enum: [CC, CE, PA, TI, RC, NIT] }
+        document_number: { type: string }
+        names: { type: string }
+        last_names: { type: string }
+        password: { type: string, format: password }
+        phone: { type: string, nullable: true }
+
+    CreateTenantResponse:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        slug: { type: string }
+        database_url: { type: string }
+        admin_user_id: { type: string, format: uuid }
+        admin_reused: { type: boolean }
+
+    TenantSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [provisioning, active, suspended] }
+        plan: { type: string }
+
+    ListTenantsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TenantSummary' }

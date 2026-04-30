@@ -9,33 +9,44 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { post } from "../lib/api";
+import { post, type LoginResponse, type Membership } from "../lib/api";
 
 interface LoginScreenProps {
-  onLoginSuccess: (token: string) => void;
+  onLoginSuccess: (data: {
+    accessToken: string;
+    refreshToken?: string;
+    memberships: Membership[];
+  }) => void;
 }
 
-interface LoginResponse {
-  token: string;
-}
+const DOC_TYPES = ["CC", "CE", "PA", "TI", "RC", "NIT"] as const;
+type DocType = (typeof DOC_TYPES)[number];
 
 export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [email, setEmail] = useState("");
+  const [docType, setDocType] = useState<DocType>("CC");
+  const [docNumber, setDocNumber] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError("Ingrese correo y contrasena.");
+    if (
+      !email.trim() ||
+      !docNumber.trim() ||
+      !password.trim()
+    ) {
+      setError("Completa correo, documento y contrasena.");
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    const result = await post<LoginResponse>("/v1/auth/login", {
-      email: email.trim(),
+    const result = await post<LoginResponse>("/auth/login", {
+      email: email.trim().toLowerCase(),
+      document_type: docType,
+      document_number: docNumber.trim(),
       password,
     });
 
@@ -46,11 +57,21 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       return;
     }
 
-    if (result.data?.token) {
-      onLoginSuccess(result.data.token);
-    } else {
-      setError("Respuesta inesperada del servidor.");
+    if (result.data?.mfa_required) {
+      setError("MFA aun no soportado en mobile. Usa la web por ahora.");
+      return;
     }
+
+    if (!result.data?.access_token) {
+      setError("Respuesta inesperada del servidor.");
+      return;
+    }
+
+    onLoginSuccess({
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token,
+      memberships: result.data.memberships ?? [],
+    });
   };
 
   return (
@@ -72,6 +93,41 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           autoCorrect={false}
           value={email}
           onChangeText={setEmail}
+        />
+
+        <View style={styles.row}>
+          <View style={styles.docTypeBox}>
+            <Text style={styles.smallLabel}>Tipo</Text>
+            <View style={styles.docTypeChips}>
+              {DOC_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setDocType(t)}
+                  style={[
+                    styles.chip,
+                    docType === t && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      docType === t && styles.chipTextActive,
+                    ]}
+                  >
+                    {t}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Numero de documento"
+          keyboardType="numeric"
+          value={docNumber}
+          onChangeText={setDocNumber}
         />
 
         <TextInput
@@ -137,6 +193,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
     backgroundColor: "#fafafa",
+  },
+  row: {
+    marginBottom: 16,
+  },
+  docTypeBox: {
+    flex: 1,
+  },
+  smallLabel: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 6,
+  },
+  docTypeChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fafafa",
+  },
+  chipActive: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  chipText: {
+    fontSize: 13,
+    color: "#444",
+    fontWeight: "500",
+  },
+  chipTextActive: {
+    color: "#fff",
   },
   button: {
     backgroundColor: "#2563eb",

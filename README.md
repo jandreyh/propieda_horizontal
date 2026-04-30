@@ -163,7 +163,8 @@ Caveats abiertos (no bloqueantes):
 |--------|-------|---------|--------|
 | MVP | 0-7 | `/fase N` | Completas |
 | POST-MVP | 8-15 | `/descubrir N` -> spec -> `/fase N` | Completas |
-| Frontends | web + mobile | scaffold | Scaffold listo |
+| Re-arquitectura identidad | 16 | spec frozen | Backend + frontends entregados (rama `feat/fase-16-backend`) |
+| Frontends | web + mobile | scaffold | Login 3-campos + selector + switcher |
 | Runtime end-to-end | docker + migraciones + smoke | verificado 2026-04-29 | ✓ |
 
 ### Modulos MVP (fases 0-7)
@@ -194,16 +195,26 @@ Caveats abiertos (no bloqueantes):
 - `notifications` — plantillas, preferencias, consentimientos, push tokens, config de proveedores, entregas con outbox.
 
 ### Frontends
-- `apps/web` — Next.js 16.2.4, App Router, TypeScript, Tailwind CSS v4. Login + dashboard con 13 paginas de modulos.
-- `apps/mobile` — Expo SDK 55, React Native 0.83, TypeScript. Login + home con tarjetas de modulos.
+- `apps/web` — Next.js 16.2.4, App Router, TypeScript, Tailwind CSS v4. Login 3-campos (email + tipo doc + numero + password), `/select-tenant` con tarjetas, TenantSwitcher en sidebar, dashboard con 13 paginas.
+- `apps/mobile` — Expo SDK 55, React Native 0.83, TypeScript. Login 3-campos, SelectTenantScreen, switcher manual via logout/relogin (deferred multi-screen nav).
+
+### Fase 16 — identidad cross-tenant (ADR 0007)
+- DB central centralizada: `platform_users`, `platform_user_sessions`, `platform_user_memberships`, `platform_administrators`, `platform_push_devices`, `platform_audit_logs`.
+- Cada tenant DB: `tenant_user_links` reemplaza `users` (la tabla local desaparece). FKs operativas re-apuntadas a `tenant_user_links(id)` (migraciones tenant 019 + 020).
+- Modulo Go `platform_identity`: 9 usecases (Login, MFAVerify, Refresh, Logout, Me, ListMemberships, SwitchTenant, RegisterPushDevice, RemovePushDevice). 36 tests.
+- Modulo `superadmin` + `provisioning`: `POST /superadmin/tenants` crea conjunto sincronicamente (CREATE DATABASE + golang-migrate Up + admin link), con compensaciones en falla.
+- Middleware `PlatformAuth` valida JWT y `TenantResolver` lee `current_tenant` del JWT (412 si ausente, 403 sin membresia, 404 si tenant desconocido).
+- `cmd/seed-demo` reescrito: idempotente, drop+resed completo del conjunto demo.
+- ADR 0002 marcado como **Superseded by 0007**.
 
 ## Decisiones arquitectonicas (ADRs)
 
 - [ADR 0001 — Estrategia multi-tenant](docs/adr/0001-architecture-multi-tenant-strategy.md)
-- [ADR 0002 — Autenticacion e identidad](docs/adr/0002-authentication-and-identity.md)
+- [ADR 0002 — Autenticacion e identidad](docs/adr/0002-authentication-and-identity.md) — *Superseded por 0007*
 - [ADR 0003 — Autorizacion RBAC con scopes](docs/adr/0003-authorization-rbac-scopes.md)
 - [ADR 0004 — Auditoria y soft-delete](docs/adr/0004-audit-and-soft-delete-strategy.md)
 - [ADR 0005 — Transaccionalidad e idempotencia](docs/adr/0005-transactional-and-idempotency-strategy.md)
+- [ADR 0007 — Identidad cross-tenant](docs/adr/0007-cross-tenant-identity.md)
 
 ## Licencia
 

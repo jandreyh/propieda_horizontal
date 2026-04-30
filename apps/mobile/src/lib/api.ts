@@ -13,11 +13,21 @@ interface ApiResponse<T> {
   status: number;
 }
 
+let bearerToken: string | null = null;
+
+export function setBearer(token: string | null) {
+  bearerToken = token;
+}
+
+export function getBearer(): string | null {
+  return bearerToken;
+}
+
 export async function apiRequest<T>(
   method: string,
   path: string,
   body?: unknown,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
 ): Promise<ApiResponse<T>> {
   const url = `${BASE_URL}${path}`;
 
@@ -25,6 +35,9 @@ export async function apiRequest<T>(
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+  if (bearerToken) {
+    defaultHeaders["Authorization"] = `Bearer ${bearerToken}`;
+  }
 
   try {
     const response = await fetch(url, {
@@ -37,7 +50,10 @@ export async function apiRequest<T>(
 
     if (!response.ok) {
       const errorBody = await response.text();
-      return { error: errorBody || `Request failed with status ${status}`, status };
+      return {
+        error: errorBody || `Request failed with status ${status}`,
+        status,
+      };
     }
 
     const data = (await response.json()) as T;
@@ -62,4 +78,34 @@ export function put<T>(path: string, body: unknown, headers?: Record<string, str
 
 export function del<T>(path: string, headers?: Record<string, string>) {
   return apiRequest<T>("DELETE", path, undefined, headers);
+}
+
+// --- Tipos compartidos post-Fase 16 ---
+
+export interface Membership {
+  tenant_id: string;
+  tenant_slug: string;
+  tenant_name: string;
+  logo_url?: string | null;
+  primary_color?: string | null;
+  role: string;
+  status: string;
+}
+
+export interface LoginResponse {
+  access_token?: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  memberships?: Membership[];
+  needs_tenant?: boolean;
+  mfa_required?: boolean;
+  pre_auth_token?: string;
+}
+
+export interface SwitchTenantResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  current_tenant: Membership;
 }

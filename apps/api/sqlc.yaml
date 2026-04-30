@@ -1,20 +1,26 @@
 version: "2"
 sql:
-  - name: identity
-    engine: postgresql
-    queries: internal/modules/identity/infrastructure/persistence/queries
-    schema: ../../migrations/tenant
-    gen:
-      go:
-        package: identitydb
-        out: internal/modules/identity/infrastructure/persistence/sqlcgen
-        sql_package: pgx/v5
-        emit_interface: true
-        emit_empty_slices: true
-        emit_exact_table_names: false
-        emit_pointers_for_null_types: true
-        rename:
-          mfa: MFA
+  # MODULO LEGACY: post-Fase 16 (ADR 0007), la tabla `users` deja de existir
+  # en tenant DB. Las queries de identity (login local, sesiones, MFA por
+  # tenant) ya no aplican; se reemplazan por el modulo platform_identity en
+  # DB central. Esta entrada queda comentada para que `sqlc generate` no
+  # falle. El codigo generado anterior sigue commiteado en sqlcgen/ y NO se
+  # usa en runtime — el modulo identity legacy no se monta en main.go.
+  # - name: identity
+  #   engine: postgresql
+  #   queries: internal/modules/identity/infrastructure/persistence/queries
+  #   schema: ../../migrations/tenant
+  #   gen:
+  #     go:
+  #       package: identitydb
+  #       out: internal/modules/identity/infrastructure/persistence/sqlcgen
+  #       sql_package: pgx/v5
+  #       emit_interface: true
+  #       emit_empty_slices: true
+  #       emit_exact_table_names: false
+  #       emit_pointers_for_null_types: true
+  #       rename:
+  #         mfa: MFA
   - name: authorization
     engine: postgresql
     queries: internal/modules/authorization/infrastructure/persistence/queries
@@ -53,18 +59,22 @@ sql:
         emit_interface: true
         emit_empty_slices: true
         emit_pointers_for_null_types: true
-  - name: units
-    engine: postgresql
-    queries: internal/modules/units/infrastructure/persistence/queries
-    schema: ../../migrations/tenant
-    gen:
-      go:
-        package: unitsdb
-        out: internal/modules/units/infrastructure/persistence/sqlcgen
-        sql_package: pgx/v5
-        emit_interface: true
-        emit_empty_slices: true
-        emit_pointers_for_null_types: true
+  # MODULO LEGACY: las queries de units hacen JOIN con `users` (para
+  # GetPeopleInUnit). Post-Fase 16, ese JOIN debe re-escribirse contra
+  # tenant_user_links + un fetch de nombres a la DB central. Queda comentado
+  # hasta que se reescriban las queries.
+  # - name: units
+  #   engine: postgresql
+  #   queries: internal/modules/units/infrastructure/persistence/queries
+  #   schema: ../../migrations/tenant
+  #   gen:
+  #     go:
+  #       package: unitsdb
+  #       out: internal/modules/units/infrastructure/persistence/sqlcgen
+  #       sql_package: pgx/v5
+  #       emit_interface: true
+  #       emit_empty_slices: true
+  #       emit_pointers_for_null_types: true
   - name: people
     engine: postgresql
     queries: internal/modules/people/infrastructure/persistence/queries
@@ -109,6 +119,33 @@ sql:
       go:
         package: announcementsdb
         out: internal/modules/announcements/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+  - name: platform_identity
+    engine: postgresql
+    queries: internal/modules/platform_identity/infrastructure/persistence/queries
+    schema: ../../migrations/central
+    gen:
+      go:
+        package: platformiddb
+        out: internal/modules/platform_identity/infrastructure/persistence/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        rename:
+          mfa: MFA
+          ip: IP
+  - name: superadmin
+    engine: postgresql
+    queries: internal/modules/superadmin/infrastructure/persistence/queries
+    schema: ../../migrations/central
+    gen:
+      go:
+        package: superadmindb
+        out: internal/modules/superadmin/infrastructure/persistence/sqlcgen
         sql_package: pgx/v5
         emit_interface: true
         emit_empty_slices: true

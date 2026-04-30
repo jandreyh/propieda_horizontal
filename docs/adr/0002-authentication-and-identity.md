@@ -1,9 +1,18 @@
 # ADR 0002 — Autenticacion e identidad
 
-- **Estado:** Accepted
-- **Fecha:** 2026-04-28
+- **Estado:** **Superseded by [ADR 0007](0007-cross-tenant-identity.md)** (2026-04-30)
+- **Fecha original:** 2026-04-28
 - **Autor:** Equipo Plataforma (Senior Software Architect)
-- **Relacionado:** ADR 0001 (Modelo multi-tenant database-per-tenant), ADR 0003 (RBAC), futuros ADR de auditoria.
+- **Relacionado:** ADR 0001 (Modelo multi-tenant database-per-tenant), ADR 0003 (RBAC), ADR 0007 (Identidad cross-tenant — supersede del actual).
+
+> **Nota de superseding:** Esta ADR asumio que la identidad operativa
+> vivia DENTRO de cada tenant DB (`users` por conjunto). En la fase de
+> Discovery POST-MVP el usuario decidio modelar identidad GLOBAL — una
+> persona = un `platform_users` en la DB central que aparece en N
+> tenants via `tenant_user_links`. ADR 0007 documenta la decision y la
+> Fase 16 implementa el cambio (login de 3 factores, selector,
+> switch-tenant). El contenido a continuacion se conserva como contexto
+> historico pero **no refleja el sistema actual**.
 
 ## Contexto
 

@@ -39,8 +39,6 @@ import (
 	authzhttp "github.com/saas-ph/api/internal/modules/authorization/interfaces/http"
 	finpersistence "github.com/saas-ph/api/internal/modules/finance/infrastructure/persistence"
 	finhttp "github.com/saas-ph/api/internal/modules/finance/interfaces/http"
-	idpersistence "github.com/saas-ph/api/internal/modules/identity/infrastructure/persistence"
-	idhttp "github.com/saas-ph/api/internal/modules/identity/interfaces/http"
 	incpersistence "github.com/saas-ph/api/internal/modules/incidents/infrastructure/persistence"
 	inchttp "github.com/saas-ph/api/internal/modules/incidents/interfaces/http"
 	notifpersistence "github.com/saas-ph/api/internal/modules/notifications/infrastructure/persistence"
@@ -54,14 +52,20 @@ import (
 	penhttp "github.com/saas-ph/api/internal/modules/penalties/interfaces/http"
 	peoplepersistence "github.com/saas-ph/api/internal/modules/people/infrastructure/persistence"
 	peoplehttp "github.com/saas-ph/api/internal/modules/people/interfaces/http"
+	platformidpersistence "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence"
+	platformidhttp "github.com/saas-ph/api/internal/modules/platform_identity/interfaces/http"
 	pqrspersistence "github.com/saas-ph/api/internal/modules/pqrs/infrastructure/persistence"
 	pqrshttp "github.com/saas-ph/api/internal/modules/pqrs/interfaces/http"
+	"github.com/saas-ph/api/internal/modules/provisioning"
 	respersistence "github.com/saas-ph/api/internal/modules/reservations/infrastructure/persistence"
 	reshttp "github.com/saas-ph/api/internal/modules/reservations/interfaces/http"
 	rspersistence "github.com/saas-ph/api/internal/modules/residential_structure/infrastructure/persistence"
 	rshttp "github.com/saas-ph/api/internal/modules/residential_structure/interfaces/http"
+	superadminhttp "github.com/saas-ph/api/internal/modules/superadmin/interfaces/http"
 	tcpersistence "github.com/saas-ph/api/internal/modules/tenant_config/infrastructure/persistence"
 	tchttp "github.com/saas-ph/api/internal/modules/tenant_config/interfaces/http"
+	tmpersistence "github.com/saas-ph/api/internal/modules/tenant_members/infrastructure/persistence"
+	tmhttp "github.com/saas-ph/api/internal/modules/tenant_members/interfaces/http"
 	unitspersistence "github.com/saas-ph/api/internal/modules/units/infrastructure/persistence"
 	unitshttp "github.com/saas-ph/api/internal/modules/units/interfaces/http"
 	"github.com/saas-ph/api/internal/platform/config"
@@ -177,6 +181,7 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recovery(logger))
 	r.Use(middleware.Logging(logger))
+	r.Use(middleware.CORS(middleware.CORSConfig{}))
 	r.Use(middleware.RateLimit(middleware.RateLimitConfig{
 		RequestsPerSecond: 50,
 		Burst:             100,
@@ -188,13 +193,59 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 		r.Get("/ready", handlers.Ready(centralPool))
 	}
 
+	// Modulo platform_identity (post-Fase 16 / ADR 0007). Vive en la DB
+	// central y NO se monta detras de tenant_resolver: la identidad es
+	// global y el current_tenant se selecciona via /auth/switch-tenant.
+	if centralPool != nil {
+		platformidhttp.Mount(r, platformidhttp.Dependencies{
+			Logger:      logger,
+			Signer:      signer,
+			UserRepo:    platformidpersistence.NewPlatformUserRepository(centralPool),
+			SessionRepo: platformidpersistence.NewSessionRepository(centralPool),
+			DeviceRepo:  platformidpersistence.NewPushDeviceRepository(centralPool),
+			Now:         time.Now,
+		})
+	}
+
+	// Modulo superadmin + provisioning. Tambien fuera del tenant_resolver:
+	// el superadmin opera contra la DB central. La autorizacion se hace
+	// inline en el modulo (rol platform_superadmin en el JWT).
+	//
+	// PROVISIONING_MAINTENANCE_URL y PROVISIONING_TENANT_URL_TEMPLATE
+	// son los unicos parametros adicionales requeridos. Si falta alguno
+	// se omite el wiring (los endpoints no estaran disponibles).
+	if centralPool != nil {
+		maintURL := os.Getenv("PROVISIONING_MAINTENANCE_URL")
+		urlTpl := os.Getenv("PROVISIONING_TENANT_URL_TEMPLATE")
+		migPath := os.Getenv("PROVISIONING_TENANT_MIGRATIONS_PATH")
+		if maintURL != "" && urlTpl != "" && migPath != "" {
+			prov := provisioning.New(provisioning.Config{
+				CentralPool:        centralPool,
+				MaintenanceURL:     maintURL,
+				AdminURLTemplate:   urlTpl,
+				MigrationsPathFile: migPath,
+			})
+			superadminhttp.Mount(r, superadminhttp.Dependencies{
+				Logger:      logger,
+				CentralPool: centralPool,
+				Provisioner: prov,
+			})
+		}
+	}
+
 	// Rutas con tenant resuelto.
 	if registry != nil {
 		r.Group(func(tr chi.Router) {
+			tr.Use(middleware.PlatformAuth(middleware.PlatformAuthConfig{
+				Signer: signer,
+				Skip: func(req *http.Request) bool {
+					p := req.URL.Path
+					return p == "/health" || p == "/ready" || strings.HasPrefix(p, "/superadmin/")
+				},
+			}))
 			tr.Use(middleware.TenantResolver(middleware.TenantResolverConfig{
-				Registry:   registry,
-				BaseDomain: cfg.Tenant.BaseDomain,
-				Logger:     logger,
+				Registry: registry,
+				Logger:   logger,
 				Skip: func(req *http.Request) bool {
 					p := req.URL.Path
 					return p == "/health" || p == "/ready" || strings.HasPrefix(p, "/superadmin/")
@@ -202,14 +253,22 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 			}))
 			tr.Get("/tenant/ready", handlers.TenantReady)
 
-			// Modulo identity.
-			idhttp.Mount(tr, idhttp.Dependencies{
-				Logger:      logger,
-				Signer:      signer,
-				UserRepo:    idpersistence.NewUserRepository(),
-				SessionRepo: idpersistence.NewSessionRepository(),
-				Now:         time.Now,
+			// Modulo tenant_members (Fase 16): vinculacion de personas
+			// al conjunto via public_code. Vive bajo tenant_resolver
+			// porque opera contra tenant_user_links del tenant.
+			tmhttp.Mount(tr, tmhttp.Dependencies{
+				Logger:   logger,
+				Links:    tmpersistence.NewLinkRepository(),
+				Enricher: tmpersistence.NewEnricherRepository(centralPool),
 			})
+
+			// Modulo identity LEGACY — superseded por platform_identity
+			// (ADR 0007). Sus endpoints (/auth/*) los provee ahora
+			// platform_identity desde el router raiz, fuera del
+			// tenant_resolver. Las queries de identity legacy hacian
+			// JOIN con la tabla `users` que desaparece post-Fase 16.
+			//
+			// idhttp.Mount(tr, idhttp.Dependencies{...})  // disabled
 
 			// Modulo authorization.
 			authzhttp.Mount(tr, authzhttp.Dependencies{

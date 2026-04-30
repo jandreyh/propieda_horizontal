@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { TenantSwitcher } from "@/components/TenantSwitcher";
+import {
+  clearSession,
+  getCurrentTenant,
+  isAuthenticated,
+} from "@/lib/auth";
 
 interface NavItem {
   label: string;
@@ -40,6 +48,24 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Guard cliente: si no hay token o no hay current_tenant, redirigir.
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
+    if (!getCurrentTenant()) {
+      router.replace("/select-tenant");
+    }
+  }, [router]);
+
+  function handleLogout(e: React.MouseEvent) {
+    e.preventDefault();
+    clearSession();
+    router.push("/login");
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -49,6 +75,10 @@ export default function DashboardLayout({
           <Link href="/dashboard" className="text-lg font-bold text-gray-900">
             Propiedad Horizontal
           </Link>
+        </div>
+
+        <div className="border-b border-gray-200 px-3 py-3">
+          <TenantSwitcher />
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4">
@@ -81,12 +111,13 @@ export default function DashboardLayout({
         </nav>
 
         <div className="border-t border-gray-200 px-6 py-3">
-          <Link
+          <a
             href="/login"
+            onClick={handleLogout}
             className="block text-sm text-gray-500 hover:text-gray-700"
           >
             Cerrar sesion
-          </Link>
+          </a>
         </div>
       </aside>
 

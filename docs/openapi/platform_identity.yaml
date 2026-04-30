@@ -1,0 +1,320 @@
+openapi: 3.0.3
+info:
+  title: SaaS Propiedad Horizontal — Platform Identity (Fase 16, ADR 0007)
+  version: 1.0.0
+  description: |
+    Identidad cross-tenant. Una persona = una fila `platform_users` en la
+    DB central. Cada conjunto enlaza al usuario via `tenant_user_links`.
+    Login con email + documento + password. JWT lleva memberships[] y
+    current_tenant; el cliente cambia de conjunto via /auth/switch-tenant.
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev
+
+paths:
+  /auth/login:
+    post:
+      summary: Login con 3 factores (email + documento + password)
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login exitoso (puede traer access_token o pre_auth_token si MFA)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '403':
+          $ref: '#/components/responses/AccountInactive'
+        '423':
+          $ref: '#/components/responses/AccountLocked'
+
+  /auth/mfa/verify:
+    post:
+      summary: Completa el login con codigo TOTP cuando MFA esta enrolado
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAVerifyRequest'
+      responses:
+        '200':
+          description: MFA OK; access + refresh emitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Pre-auth invalido o codigo TOTP incorrecto
+
+  /auth/refresh:
+    post:
+      summary: Rota el refresh token y emite un nuevo access
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Nuevos tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Refresh invalido / expirado / revocado
+
+  /auth/logout:
+    post:
+      summary: Revoca la sesion asociada al refresh token (idempotente)
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Sesion revocada
+
+  /auth/switch-tenant:
+    post:
+      summary: Re-firma el JWT fijando current_tenant
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchTenantRequest'
+      responses:
+        '200':
+          description: Nuevo access token con current_tenant fijado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwitchTenantResponse'
+        '403':
+          description: La persona no tiene membresia activa en ese tenant
+
+  /me:
+    get:
+      summary: Devuelve los datos globales del usuario autenticado
+      tags: [me]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+
+  /me/memberships:
+    get:
+      summary: Lista paginada de membresias activas
+      tags: [me]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipsResponse'
+
+  /me/push-devices:
+    post:
+      summary: Upsert de un device token para notifs push
+      tags: [me]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterPushDeviceRequest'
+      responses:
+        '201':
+          description: Device registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterPushDeviceResponse'
+
+  /me/push-devices/{deviceID}:
+    delete:
+      summary: Revoca un device token
+      tags: [me]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deviceID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Device revocado
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, document_type, document_number, password]
+      properties:
+        email: { type: string, format: email }
+        document_type: { type: string, enum: [CC, CE, PA, TI, RC, NIT] }
+        document_number: { type: string }
+        password: { type: string, format: password }
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 900 }
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+        needs_tenant: { type: boolean }
+        mfa_required: { type: boolean }
+        pre_auth_token: { type: string }
+
+    MFAVerifyRequest:
+      type: object
+      required: [pre_auth_token, code]
+      properties:
+        pre_auth_token: { type: string }
+        code: { type: string, example: "123456" }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    RefreshResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string }
+        expires_in: { type: integer }
+
+    SwitchTenantRequest:
+      type: object
+      required: [tenant_slug]
+      properties:
+        tenant_slug: { type: string }
+
+    SwitchTenantResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string }
+        expires_in: { type: integer }
+        current_tenant: { $ref: '#/components/schemas/Membership' }
+
+    Membership:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        tenant_slug: { type: string }
+        tenant_name: { type: string }
+        logo_url: { type: string, nullable: true }
+        primary_color: { type: string, nullable: true }
+        role: { type: string }
+        status: { type: string, enum: [active, blocked] }
+
+    MeResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        document_type: { type: string }
+        document_number: { type: string }
+        names: { type: string }
+        last_names: { type: string }
+        email: { type: string }
+        phone: { type: string, nullable: true }
+        photo_url: { type: string, nullable: true }
+        public_code: { type: string }
+        mfa_enrolled_at: { type: string, format: date-time, nullable: true }
+        last_login_at: { type: string, format: date-time, nullable: true }
+
+    MembershipsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+
+    RegisterPushDeviceRequest:
+      type: object
+      required: [device_token, platform]
+      properties:
+        device_token: { type: string }
+        platform: { type: string, enum: [ios, android, web] }
+        device_label: { type: string, nullable: true }
+
+    RegisterPushDeviceResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        device_token: { type: string }
+        platform: { type: string }
+        device_label: { type: string, nullable: true }
+
+  responses:
+    InvalidCredentials:
+      description: Credenciales invalidas (Problem+JSON)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AccountInactive:
+      description: Cuenta suspendida
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AccountLocked:
+      description: Cuenta bloqueada por intentos fallidos
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas_problem:
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
