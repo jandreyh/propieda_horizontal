@@ -1,6 +1,7 @@
 # Go
 /apps/api/bin/
 /apps/api/tmp/
+/apps/api/*.exe
 *.test
 *.out
 coverage.txt
