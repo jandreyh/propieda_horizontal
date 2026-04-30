@@ -46,24 +46,26 @@ import (
 	pkgusecases "github.com/saas-ph/api/internal/modules/packages/application/usecases"
 	pkgpersistence "github.com/saas-ph/api/internal/modules/packages/infrastructure/persistence"
 	pkghttp "github.com/saas-ph/api/internal/modules/packages/interfaces/http"
-	platformidpersistence "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence"
-	platformidhttp "github.com/saas-ph/api/internal/modules/platform_identity/interfaces/http"
-	"github.com/saas-ph/api/internal/modules/provisioning"
-	superadminhttp "github.com/saas-ph/api/internal/modules/superadmin/interfaces/http"
 	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
 	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
 	penpersistence "github.com/saas-ph/api/internal/modules/penalties/infrastructure/persistence"
 	penhttp "github.com/saas-ph/api/internal/modules/penalties/interfaces/http"
 	peoplepersistence "github.com/saas-ph/api/internal/modules/people/infrastructure/persistence"
 	peoplehttp "github.com/saas-ph/api/internal/modules/people/interfaces/http"
+	platformidpersistence "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence"
+	platformidhttp "github.com/saas-ph/api/internal/modules/platform_identity/interfaces/http"
 	pqrspersistence "github.com/saas-ph/api/internal/modules/pqrs/infrastructure/persistence"
 	pqrshttp "github.com/saas-ph/api/internal/modules/pqrs/interfaces/http"
+	"github.com/saas-ph/api/internal/modules/provisioning"
 	respersistence "github.com/saas-ph/api/internal/modules/reservations/infrastructure/persistence"
 	reshttp "github.com/saas-ph/api/internal/modules/reservations/interfaces/http"
 	rspersistence "github.com/saas-ph/api/internal/modules/residential_structure/infrastructure/persistence"
 	rshttp "github.com/saas-ph/api/internal/modules/residential_structure/interfaces/http"
+	superadminhttp "github.com/saas-ph/api/internal/modules/superadmin/interfaces/http"
 	tcpersistence "github.com/saas-ph/api/internal/modules/tenant_config/infrastructure/persistence"
 	tchttp "github.com/saas-ph/api/internal/modules/tenant_config/interfaces/http"
+	tmpersistence "github.com/saas-ph/api/internal/modules/tenant_members/infrastructure/persistence"
+	tmhttp "github.com/saas-ph/api/internal/modules/tenant_members/interfaces/http"
 	unitspersistence "github.com/saas-ph/api/internal/modules/units/infrastructure/persistence"
 	unitshttp "github.com/saas-ph/api/internal/modules/units/interfaces/http"
 	"github.com/saas-ph/api/internal/platform/config"
@@ -249,6 +251,15 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 				},
 			}))
 			tr.Get("/tenant/ready", handlers.TenantReady)
+
+			// Modulo tenant_members (Fase 16): vinculacion de personas
+			// al conjunto via public_code. Vive bajo tenant_resolver
+			// porque opera contra tenant_user_links del tenant.
+			tmhttp.Mount(tr, tmhttp.Dependencies{
+				Logger:   logger,
+				Links:    tmpersistence.NewLinkRepository(),
+				Enricher: tmpersistence.NewEnricherRepository(centralPool),
+			})
 
 			// Modulo identity LEGACY — superseded por platform_identity
 			// (ADR 0007). Sus endpoints (/auth/*) los provee ahora
