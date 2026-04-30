@@ -20,10 +20,11 @@ import (
 // UserRepo es obligatorio.
 // Now es opcional; default time.Now.
 type Dependencies struct {
-	Logger   *slog.Logger
-	Signer   *jwtsign.Signer
-	UserRepo domain.PlatformUserRepository
-	Now      func() time.Time
+	Logger     *slog.Logger
+	Signer     *jwtsign.Signer
+	UserRepo   domain.PlatformUserRepository
+	DeviceRepo domain.PushDeviceRepository
+	Now        func() time.Time
 }
 
 // Mount registra los endpoints de identidad de plataforma en el router
@@ -69,6 +70,12 @@ func Mount(r chi.Router, deps Dependencies) {
 			Signer: deps.Signer,
 			Now:    now,
 		}),
+		registerDeviceUC: usecases.NewRegisterPushDeviceUseCase(usecases.RegisterPushDeviceDeps{
+			Devices: deps.DeviceRepo,
+		}),
+		removeDeviceUC: usecases.NewRemovePushDeviceUseCase(usecases.RemovePushDeviceDeps{
+			Devices: deps.DeviceRepo,
+		}),
 	}
 
 	r.Route("/auth", func(ar chi.Router) {
@@ -83,5 +90,7 @@ func Mount(r chi.Router, deps Dependencies) {
 		pr.Use(h.authMiddleware)
 		pr.Get("/me", h.me)
 		pr.Get("/me/memberships", h.memberships)
+		pr.Post("/me/push-devices", h.registerPushDevice)
+		pr.Delete("/me/push-devices/{deviceID}", h.removePushDevice)
 	})
 }

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/saas-ph/api/internal/modules/platform_identity/application/dto"
 	"github.com/saas-ph/api/internal/modules/platform_identity/application/usecases"
 	apperrors "github.com/saas-ph/api/internal/platform/errors"
@@ -24,6 +26,8 @@ type handlers struct {
 	meUC              *usecases.MeUseCase
 	listMembershipsUC *usecases.ListMembershipsUseCase
 	switchTenantUC    *usecases.SwitchTenantUseCase
+	registerDeviceUC  *usecases.RegisterPushDeviceUseCase
+	removeDeviceUC    *usecases.RemovePushDeviceUseCase
 }
 
 // authContextKey es la clave para colocar las claims del access token
@@ -75,6 +79,39 @@ func (h *handlers) memberships(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *handlers) registerPushDevice(w http.ResponseWriter, r *http.Request) {
+	claims, ok := authClaimsFromCtx(r.Context())
+	if !ok || claims == nil || claims.Subject == "" {
+		apperrors.Write(w, apperrors.Unauthorized("missing or invalid authentication").WithInstance(r.URL.Path))
+		return
+	}
+	var req dto.RegisterPushDeviceRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		apperrors.Write(w, apperrors.BadRequest(err.Error()).WithInstance(r.URL.Path))
+		return
+	}
+	resp, err := h.registerDeviceUC.Execute(r.Context(), claims.Subject, req)
+	if err != nil {
+		h.writeUseCaseError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *handlers) removePushDevice(w http.ResponseWriter, r *http.Request) {
+	claims, ok := authClaimsFromCtx(r.Context())
+	if !ok || claims == nil || claims.Subject == "" {
+		apperrors.Write(w, apperrors.Unauthorized("missing or invalid authentication").WithInstance(r.URL.Path))
+		return
+	}
+	deviceID := chi.URLParam(r, "deviceID")
+	if err := h.removeDeviceUC.Execute(r.Context(), claims.Subject, deviceID); err != nil {
+		h.writeUseCaseError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handlers) switchTenant(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +201,8 @@ func (h *handlers) writeUseCaseError(w http.ResponseWriter, r *http.Request, err
 		apperrors.Write(w, apperrors.Unauthorized("user no longer accessible").WithInstance(r.URL.Path))
 	case errors.Is(err, usecases.ErrMembershipMissing):
 		apperrors.Write(w, apperrors.Forbidden("no membership in tenant").WithInstance(r.URL.Path))
+	case errors.Is(err, usecases.ErrInvalidDevice):
+		apperrors.Write(w, apperrors.BadRequest("invalid push device").WithInstance(r.URL.Path))
 	default:
 		if h.logger != nil {
 			h.logger.ErrorContext(r.Context(), "platform_identity: internal error",

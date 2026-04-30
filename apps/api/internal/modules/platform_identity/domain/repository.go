@@ -41,3 +41,15 @@ type PlatformUserRepository interface {
 	// identificado por slug.
 	HasMembership(ctx context.Context, userID uuid.UUID, slug string) (bool, error)
 }
+
+// PushDeviceRepository abstrae el acceso a `platform_push_devices` para
+// el manejo de tokens FCM/APNs/Web a nivel plataforma.
+type PushDeviceRepository interface {
+	// Register hace upsert (token unique por usuario): si existe, marca
+	// last_seen_at=now y limpia revoked_at; si no, inserta.
+	Register(ctx context.Context, userID uuid.UUID, token, platform string, label *string) (*entities.PushDevice, error)
+	// Revoke marca un device revocado para no enviarle mas notifs.
+	Revoke(ctx context.Context, deviceID, userID uuid.UUID) error
+	// List devuelve los devices activos de un usuario.
+	List(ctx context.Context, userID uuid.UUID) ([]entities.PushDevice, error)
+}

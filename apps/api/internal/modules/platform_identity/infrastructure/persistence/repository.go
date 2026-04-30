@@ -13,12 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saas-ph/api/internal/modules/platform_identity/domain"
 	"github.com/saas-ph/api/internal/modules/platform_identity/domain/entities"
 	platformiddb "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence/sqlcgen"
 )
-
-// ErrNotFound se devuelve cuando no se encuentra el registro buscado.
-var ErrNotFound = errors.New("platform_identity: registro no encontrado")
 
 // PlatformUserRepository envuelve sqlcgen.Queries con conversiones a/desde
 // el dominio.
@@ -26,16 +24,19 @@ type PlatformUserRepository struct {
 	q *platformiddb.Queries
 }
 
-// NewPlatformUserRepository construye el repo.
+// NewPlatformUserRepository construye el repo. La interface compliance se
+// fuerza con `var _ domain.PlatformUserRepository = (*PlatformUserRepository)(nil)`.
 func NewPlatformUserRepository(pool *pgxpool.Pool) *PlatformUserRepository {
 	return &PlatformUserRepository{q: platformiddb.New(pool)}
 }
+
+var _ domain.PlatformUserRepository = (*PlatformUserRepository)(nil)
 
 // FindByEmail busca un PlatformUser activo por email (case-insensitive).
 func (r *PlatformUserRepository) FindByEmail(ctx context.Context, email string) (*entities.PlatformUser, error) {
 	row, err := r.q.GetPlatformUserByEmail(ctx, email)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("FindByEmail: %w", err)
@@ -50,7 +51,7 @@ func (r *PlatformUserRepository) FindByDocument(ctx context.Context, docType, do
 		DocumentNumber: docNumber,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("FindByDocument: %w", err)
@@ -62,7 +63,7 @@ func (r *PlatformUserRepository) FindByDocument(ctx context.Context, docType, do
 func (r *PlatformUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*entities.PlatformUser, error) {
 	row, err := r.q.GetPlatformUserByID(ctx, uuidToPg(id))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("FindByID: %w", err)
@@ -74,7 +75,7 @@ func (r *PlatformUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*e
 func (r *PlatformUserRepository) FindByPublicCode(ctx context.Context, code string) (*entities.PlatformUser, error) {
 	row, err := r.q.GetPlatformUserByPublicCode(ctx, code)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("FindByPublicCode: %w", err)
@@ -137,6 +138,56 @@ func (r *PlatformUserRepository) HasMembership(ctx context.Context, userID uuid.
 	return ok, nil
 }
 
+// PushDeviceRepository envuelve sqlcgen para `platform_push_devices`.
+type PushDeviceRepository struct {
+	q *platformiddb.Queries
+}
+
+// NewPushDeviceRepository construye el repo. Reutiliza el pool central.
+func NewPushDeviceRepository(pool *pgxpool.Pool) *PushDeviceRepository {
+	return &PushDeviceRepository{q: platformiddb.New(pool)}
+}
+
+var _ domain.PushDeviceRepository = (*PushDeviceRepository)(nil)
+
+// Register hace upsert del token (es UNIQUE por usuario+token).
+func (r *PushDeviceRepository) Register(ctx context.Context, userID uuid.UUID, token, platform string, label *string) (*entities.PushDevice, error) {
+	row, err := r.q.RegisterPushDevice(ctx, platformiddb.RegisterPushDeviceParams{
+		PlatformUserID: uuidToPg(userID),
+		DeviceToken:    token,
+		Platform:       platform,
+		DeviceLabel:    label,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Register: %w", err)
+	}
+	return rowToPushDevice(row), nil
+}
+
+// Revoke marca el device como revocado.
+func (r *PushDeviceRepository) Revoke(ctx context.Context, deviceID, userID uuid.UUID) error {
+	if err := r.q.RevokePushDevice(ctx, platformiddb.RevokePushDeviceParams{
+		ID:             uuidToPg(deviceID),
+		PlatformUserID: uuidToPg(userID),
+	}); err != nil {
+		return fmt.Errorf("Revoke: %w", err)
+	}
+	return nil
+}
+
+// List devuelve los devices activos del usuario.
+func (r *PushDeviceRepository) List(ctx context.Context, userID uuid.UUID) ([]entities.PushDevice, error) {
+	rows, err := r.q.ListPushDevicesForUser(ctx, uuidToPg(userID))
+	if err != nil {
+		return nil, fmt.Errorf("List: %w", err)
+	}
+	out := make([]entities.PushDevice, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, *rowToPushDevice(row))
+	}
+	return out, nil
+}
+
 // rowToUser convierte el row sqlc al dominio.
 func rowToUser(r platformiddb.PlatformUser) *entities.PlatformUser {
 	return &entities.PlatformUser{
@@ -158,6 +209,19 @@ func rowToUser(r platformiddb.PlatformUser) *entities.PlatformUser {
 		Status:              r.Status,
 		CreatedAt:           tsToTime(r.CreatedAt),
 		UpdatedAt:           tsToTime(r.UpdatedAt),
+	}
+}
+
+func rowToPushDevice(r platformiddb.PlatformPushDevice) *entities.PushDevice {
+	return &entities.PushDevice{
+		ID:             pgToUUID(r.ID),
+		PlatformUserID: pgToUUID(r.PlatformUserID),
+		DeviceToken:    r.DeviceToken,
+		Platform:       r.Platform,
+		DeviceLabel:    r.DeviceLabel,
+		LastSeenAt:     tsToTime(r.LastSeenAt),
+		CreatedAt:      tsToTime(r.CreatedAt),
+		RevokedAt:      tsToPtrTime(r.RevokedAt),
 	}
 }
 
