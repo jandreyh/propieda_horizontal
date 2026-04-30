@@ -26,20 +26,20 @@ type Dependencies struct {
 	Now      func() time.Time
 }
 
-// Mount registra los endpoints publicos de identidad de plataforma en el
-// router chi recibido. Estos endpoints NO viven detras del tenant_resolver
+// Mount registra los endpoints de identidad de plataforma en el router
+// chi recibido. Estos endpoints NO viven detras del tenant_resolver
 // porque la identidad es global (DB central).
 //
 // Endpoints en esta version:
 //   - POST /auth/login
+//   - POST /auth/switch-tenant   (auth)
+//   - GET  /me                   (auth)
+//   - GET  /me/memberships       (auth)
 //
 // Pendientes de implementacion en proximas iteraciones:
 //   - POST /auth/mfa/verify
 //   - POST /auth/refresh
 //   - POST /auth/logout
-//   - POST /auth/switch-tenant
-//   - GET  /me
-//   - GET  /me/memberships
 //   - POST /me/push-devices
 //   - DELETE /me/push-devices/{id}
 func Mount(r chi.Router, deps Dependencies) {
@@ -54,7 +54,17 @@ func Mount(r chi.Router, deps Dependencies) {
 
 	h := &handlers{
 		logger: logger,
+		signer: deps.Signer,
 		loginUC: usecases.NewLoginUseCase(usecases.LoginDeps{
+			Users:  deps.UserRepo,
+			Signer: deps.Signer,
+			Now:    now,
+		}),
+		meUC: usecases.NewMeUseCase(usecases.MeDeps{Users: deps.UserRepo}),
+		listMembershipsUC: usecases.NewListMembershipsUseCase(usecases.ListMembershipsDeps{
+			Users: deps.UserRepo,
+		}),
+		switchTenantUC: usecases.NewSwitchTenantUseCase(usecases.SwitchTenantDeps{
 			Users:  deps.UserRepo,
 			Signer: deps.Signer,
 			Now:    now,
@@ -63,5 +73,15 @@ func Mount(r chi.Router, deps Dependencies) {
 
 	r.Route("/auth", func(ar chi.Router) {
 		ar.Post("/login", h.login)
+		ar.Group(func(pr chi.Router) {
+			pr.Use(h.authMiddleware)
+			pr.Post("/switch-tenant", h.switchTenant)
+		})
+	})
+
+	r.Group(func(pr chi.Router) {
+		pr.Use(h.authMiddleware)
+		pr.Get("/me", h.me)
+		pr.Get("/me/memberships", h.memberships)
 	})
 }
