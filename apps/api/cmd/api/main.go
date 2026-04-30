@@ -48,6 +48,8 @@ import (
 	pkghttp "github.com/saas-ph/api/internal/modules/packages/interfaces/http"
 	platformidpersistence "github.com/saas-ph/api/internal/modules/platform_identity/infrastructure/persistence"
 	platformidhttp "github.com/saas-ph/api/internal/modules/platform_identity/interfaces/http"
+	"github.com/saas-ph/api/internal/modules/provisioning"
+	superadminhttp "github.com/saas-ph/api/internal/modules/superadmin/interfaces/http"
 	parkingpersistence "github.com/saas-ph/api/internal/modules/parking/infrastructure/persistence"
 	parkinghttp "github.com/saas-ph/api/internal/modules/parking/interfaces/http"
 	penpersistence "github.com/saas-ph/api/internal/modules/penalties/infrastructure/persistence"
@@ -200,6 +202,32 @@ func buildRouter(logger *slog.Logger, cfg config.Config, centralPool *pgxpool.Po
 			DeviceRepo:  platformidpersistence.NewPushDeviceRepository(centralPool),
 			Now:         time.Now,
 		})
+	}
+
+	// Modulo superadmin + provisioning. Tambien fuera del tenant_resolver:
+	// el superadmin opera contra la DB central. La autorizacion se hace
+	// inline en el modulo (rol platform_superadmin en el JWT).
+	//
+	// PROVISIONING_MAINTENANCE_URL y PROVISIONING_TENANT_URL_TEMPLATE
+	// son los unicos parametros adicionales requeridos. Si falta alguno
+	// se omite el wiring (los endpoints no estaran disponibles).
+	if centralPool != nil {
+		maintURL := os.Getenv("PROVISIONING_MAINTENANCE_URL")
+		urlTpl := os.Getenv("PROVISIONING_TENANT_URL_TEMPLATE")
+		migPath := os.Getenv("PROVISIONING_TENANT_MIGRATIONS_PATH")
+		if maintURL != "" && urlTpl != "" && migPath != "" {
+			prov := provisioning.New(provisioning.Config{
+				CentralPool:        centralPool,
+				MaintenanceURL:     maintURL,
+				AdminURLTemplate:   urlTpl,
+				MigrationsPathFile: migPath,
+			})
+			superadminhttp.Mount(r, superadminhttp.Dependencies{
+				Logger:      logger,
+				CentralPool: centralPool,
+				Provisioner: prov,
+			})
+		}
 	}
 
 	// Rutas con tenant resuelto.
