@@ -31,12 +31,18 @@ type MembershipDTO struct {
 //
 // `access_token` lleva memberships[] y current_tenant=null. El cliente
 // muestra el selector (o entra directo si memberships.length == 1).
+//
+// Si la persona tiene MFA enrolado, en lugar de access_token se devuelve
+// pre_auth_token con TTL corto y el cliente debe llamar
+// POST /auth/mfa/verify para completar el login.
 type LoginResponse struct {
-	AccessToken string          `json:"access_token"`
-	TokenType   string          `json:"token_type"`
-	ExpiresIn   int             `json:"expires_in"`
-	Memberships []MembershipDTO `json:"memberships"`
-	NeedsTenant bool            `json:"needs_tenant"`
+	AccessToken  string          `json:"access_token,omitempty"`
+	TokenType    string          `json:"token_type,omitempty"`
+	ExpiresIn    int             `json:"expires_in,omitempty"`
+	Memberships  []MembershipDTO `json:"memberships,omitempty"`
+	NeedsTenant  bool            `json:"needs_tenant,omitempty"`
+	MFARequired  bool            `json:"mfa_required,omitempty"`
+	PreAuthToken string          `json:"pre_auth_token,omitempty"`
 }
 
 // SwitchTenantRequest es el body de POST /auth/switch-tenant.
