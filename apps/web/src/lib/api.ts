@@ -1,3 +1,5 @@
+import { clearSession, getAccessToken } from "./auth";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -11,7 +13,7 @@ export interface ApiError {
 
 export async function api<T>(
   path: string,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
 
@@ -20,11 +22,25 @@ export async function api<T>(
     ...(options?.headers as Record<string, string>),
   };
 
+  // Post-Fase 16 (ADR 0007): los tokens viven en localStorage y se
+  // envian via Authorization: Bearer. Ya no se usan cookies de sesion.
+  const token = getAccessToken();
+  if (token && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
     ...options,
     headers,
-    credentials: "include",
   });
+
+  if (res.status === 401) {
+    // Token expirado o invalido — limpiar y redirigir a login.
+    clearSession();
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+  }
 
   if (!res.ok) {
     const error: ApiError = await res.json().catch(() => ({

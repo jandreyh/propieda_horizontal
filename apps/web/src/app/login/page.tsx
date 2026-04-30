@@ -3,10 +3,37 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api";
+import {
+  setSession,
+  setCurrentTenant,
+  type MembershipDTO,
+} from "@/lib/auth";
+
+interface LoginResponse {
+  access_token?: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  memberships?: MembershipDTO[];
+  needs_tenant?: boolean;
+  mfa_required?: boolean;
+  pre_auth_token?: string;
+}
+
+interface SwitchTenantResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  current_tenant: MembershipDTO;
+}
+
+const DOC_TYPES = ["CC", "CE", "PA", "TI", "RC", "NIT"] as const;
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [docType, setDocType] = useState<typeof DOC_TYPES[number]>("CC");
+  const [docNumber, setDocNumber] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,8 +44,44 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await apiPost("/v1/auth/login", { email, password });
-      router.push("/dashboard");
+      const res = await apiPost<LoginResponse>("/auth/login", {
+        email,
+        document_type: docType,
+        document_number: docNumber,
+        password,
+      });
+
+      if (res.mfa_required) {
+        setError("MFA aun no soportado en esta interfaz. Contactar al admin.");
+        return;
+      }
+      if (!res.access_token) {
+        setError("Respuesta inesperada del servidor.");
+        return;
+      }
+
+      setSession({
+        access_token: res.access_token,
+        refresh_token: res.refresh_token,
+        memberships: res.memberships ?? [],
+      });
+
+      const memberships = res.memberships ?? [];
+      if (memberships.length === 1) {
+        // Auto-switch al unico tenant.
+        const slug = memberships[0].tenant_slug;
+        const switched = await apiPost<SwitchTenantResponse>(
+          "/auth/switch-tenant",
+          { tenant_slug: slug },
+        );
+        setSession({ access_token: switched.access_token });
+        setCurrentTenant(slug);
+        router.push("/dashboard");
+      } else if (memberships.length > 1) {
+        router.push("/select-tenant");
+      } else {
+        setError("Tu cuenta no tiene acceso a ningun conjunto.");
+      }
     } catch (err: unknown) {
       const apiErr = err as { detail?: string; title?: string };
       setError(apiErr?.detail || apiErr?.title || "Error al iniciar sesion");
@@ -34,7 +97,7 @@ export default function LoginPage() {
           Propiedad Horizontal
         </h1>
         <p className="mb-6 text-center text-sm text-gray-500">
-          Ingrese sus credenciales para acceder
+          Ingresa tu correo, documento y contrasena
         </p>
 
         {error && (
@@ -60,6 +123,48 @@ export default function LoginPage() {
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
               placeholder="correo@ejemplo.com"
             />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="w-32">
+              <label
+                htmlFor="docType"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                Tipo
+              </label>
+              <select
+                id="docType"
+                value={docType}
+                onChange={(e) =>
+                  setDocType(e.target.value as typeof DOC_TYPES[number])
+                }
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              >
+                {DOC_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label
+                htmlFor="docNumber"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                Numero de documento
+              </label>
+              <input
+                id="docNumber"
+                type="text"
+                required
+                value={docNumber}
+                onChange={(e) => setDocNumber(e.target.value)}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="1234567890"
+              />
+            </div>
           </div>
 
           <div>
